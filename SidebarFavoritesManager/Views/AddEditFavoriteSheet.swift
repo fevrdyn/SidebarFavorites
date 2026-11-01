@@ -11,7 +11,26 @@ struct AddEditFavoriteSheet: View {
     /// that has nothing to apply against (the SwiftUI preview) can omit it.
     let onApply: ((Favorite) async -> String?)?
 
-    @Environment(\.dismiss) private var dismiss
+    /// Called by Cancel and Save. The editor lives inside the main window now, so
+    /// closing it means "stop showing it", not "dismiss a sheet" - `dismiss()` here
+    /// would close the whole window.
+    var closeAction: () -> Void = {}
+
+    /// Drawn in the middle of the footer; the studio shell puts the workspace
+    /// switcher here.
+    var footerCenter: AnyView = AnyView(EmptyView())
+
+    func closing(_ action: @escaping () -> Void) -> AddEditFavoriteSheet {
+        var copy = self
+        copy.closeAction = action
+        return copy
+    }
+
+    func withFooterCenter<V: View>(_ view: V) -> AddEditFavoriteSheet {
+        var copy = self
+        copy.footerCenter = AnyView(view)
+        return copy
+    }
 
     @State private var name: String = ""
     @State private var folderPath: String = ""
@@ -89,7 +108,7 @@ struct AddEditFavoriteSheet: View {
 
     /// The size Finder actually draws a sidebar icon at.
     private let sidebarIconSize: CGFloat = 16
-    private let enlargedIconSize: CGFloat = 48
+    private let enlargedIconSize: CGFloat = 35
 
     private var isEditing: Bool { existingFavorite != nil }
 
@@ -173,134 +192,24 @@ struct AddEditFavoriteSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // No header row: this is a window now, and its title bar already
-            // carries the title and a close button. Drawing a second pair
-            // underneath them was the sheet's job.
-
-            // Form
-            Form {
-                Section {
-                    LabeledContent("Name") {
-                        Text(name.isEmpty ? "Choose a folder" : name)
-                            .foregroundColor(name.isEmpty ? .secondary : .primary)
-                    }
-
-                    HStack {
-                        TextField("Folder Path", text: $folderPath)
-                            .textFieldStyle(.roundedBorder)
-                        Button("Browse...") {
-                            openFolderPicker()
-                        }
-                    }
-
-                    Text("This folder will be added to Finder's sidebar automatically. The row is named after the folder - Finder always shows a favorite under its folder's real name.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-
-                    if targetIsVolume {
-                        Toggle("Show in Locations only", isOn: $locationsOnly)
-                        Text("Finder already lists mounted disks and servers under Locations. This icons that row instead of adding a second one under Favorites.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-
-                    if let conflict = conflictingFavorite {
-                        Label("“\(conflict.name)” already uses this folder.", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                            .font(.callout)
-                        Text("A folder can only have one favorite - two would fight over the same sidebar row. Edit “\(conflict.name)” instead, or choose a different folder.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    } else if let detection = iconAuthority {
-                        ownIconWarning(detection)
-                    }
-                }
-                .onChange(of: folderPath) { newPath in
-                    name = Favorite.canonicalName(forFolderPath: newPath)
-                    refreshIconAuthority(for: newPath)
-                }
-
-                Section("Sidebar Icon Mode") {
-                    Picker("Mode", selection: $mode) {
-                        Text("Sidebar icon only").tag(Favorite.Mode.regular)
-                        Text("Both icons").tag(Favorite.Mode.advanced)
-                    }
-                    .pickerStyle(.segmented)
-
-                    if mode == .advanced {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("The folder keeps its own icon everywhere — Desktop, windows, Dock — while the sidebar shows your glyph.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Label("Adds helper “SBF-\(name.isEmpty ? "…" : name)” to System Settings (~6 MB)", systemImage: "puzzlepiece.extension")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    } else {
-                        // Says what the mode IS. The consequence of choosing it
-                        // for a target that carries its own icon is stated once,
-                        // at the choice above - not repeated here.
-                        Text("Sets the sidebar glyph. Nothing runs in the background.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Section("Icon") {
-                    Picker("Type", selection: $iconType) {
-                        Text("SF Symbol").tag(Favorite.IconType.sfSymbol)
-                        Text("Custom SVG").tag(Favorite.IconType.custom)
-                    }
-                    .pickerStyle(.segmented)
-
-                    if iconType == .sfSymbol {
-                        sfSymbolPicker
-                    } else {
-                        customSVGSection
-                    }
-                }
-
-                Section("Preview") {
-                    previewSection
-                }
+            // Plain content when it fits - nothing to scroll or bounce. Only if
+            // extra warnings make it taller than the window does it fall back
+            // to a scroll view.
+            ViewThatFits(in: .vertical) {
+                editorContent
+                ScrollView { editorContent }
             }
-            .formStyle(.grouped)
-            .scrollContentBackground(.hidden)
+            .frame(maxHeight: .infinity, alignment: .top)
 
             Divider()
 
-            // Actions
-            HStack {
-                // Deliberately not disabled while an Apply runs: the work is the
-                // coordinator's and completes either way, and taking away the
-                // escape hatch mid-operation is exactly when it is wanted most.
-                Button("Cancel") {
-                    dismiss()
-                }
-                .keyboardShortcut(.cancelAction)
-
-                Spacer()
-
-                if onApply != nil {
-                    applyButton
-                }
-
-                Button(isPersisted ? "Save" : "Add") {
-                    save()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(!isValid || isApplying)
-            }
-            .padding()
+            footerBar
         }
-        // Tall enough that the live preview is visible without scrolling in both
-        // icon modes; the form still scrolls when an import raises several warnings.
-        // A floor, not a size: the editor is a resizable window, and a wider one
-        // makes long paths and the symbol grid easier to read.
-        .frame(minWidth: 440, idealWidth: 480, maxWidth: .infinity,
-               minHeight: 480, idealHeight: 720, maxHeight: .infinity)
+        .frame(minWidth: 400, maxWidth: .infinity, minHeight: 380, maxHeight: .infinity)
+        .onChange(of: folderPath) { newPath in
+            name = Favorite.canonicalName(forFolderPath: newPath)
+            refreshIconAuthority(for: newPath)
+        }
         .onAppear {
             if let favorite = existingFavorite {
                 favoriteID = favorite.id
@@ -347,6 +256,7 @@ struct AddEditFavoriteSheet: View {
         }
         .sheet(isPresented: $showingSymbolBrowser) {
             SymbolBrowserSheet(currentSymbol: iconValue) { picked in
+                iconType = .sfSymbol
                 iconValue = picked
                 refreshArtwork()
             }
@@ -416,73 +326,57 @@ struct AddEditFavoriteSheet: View {
         appliedSnapshot = FormSnapshot(favorite)
     }
 
-    // MARK: - SF Symbol picker
+    // MARK: - Icon controls
 
-    private var sfSymbolPicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                TextField("Symbol Name", text: $iconValue)
-                    .textFieldStyle(.roundedBorder)
-                if SymbolCatalog.isAvailable {
-                    Button("Browse All…") { showingSymbolBrowser = true }
-                        .help("Search every SF Symbol this Mac can draw")
-                }
+    /// The symbol-name field edits SF Symbol names, so typing in it always means
+    /// "use a system symbol" - even while a custom SVG is selected.
+    private var symbolNameBinding: Binding<String> {
+        Binding(
+            get: { iconValue },
+            set: { newValue in
+                if iconType != .sfSymbol { iconType = .sfSymbol }
+                iconValue = newValue
             }
-
-            Text("Enter an SF Symbol name (e.g., folder.fill, star.circle), or browse the full catalog.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            // Quick picks
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
-                ForEach(commonSymbols, id: \.self) { symbol in
-                    Button(action: { iconValue = symbol }) {
-                        Image(systemName: symbol)
-                            .font(.system(size: 18))
-                            .frame(width: 32, height: 32)
-                            .background(iconValue == symbol ? Color.accentColor.opacity(0.2) : Color.clear)
-                            .cornerRadius(6)
-                    }
-                    .buttonStyle(.borderless)
-                    .help(symbol)
-                }
-            }
-        }
+        )
     }
 
-    // MARK: - Custom SVG import
+    private var hasCustomSVG: Bool { iconType == .custom && customSVGPath != nil }
 
-    private var customSVGSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let path = customSVGPath {
-                HStack(spacing: 8) {
-                    Image(systemName: "doc")
-                        .foregroundColor(.secondary)
-                    Text((path as NSString).lastPathComponent)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Spacer()
-                    Button("Replace...") {
-                        showingSVGPicker = true
-                    }
+    /// Opens the file picker straight away. Once an SVG is in use it turns into a
+    /// filled "Replace..." button in the accent colour.
+    private var svgButton: some View {
+        Button(action: { showingSVGPicker = true }) {
+            Text(hasCustomSVG ? "Replace..." : "Custom SVG")
+                .foregroundColor(hasCustomSVG ? .white : .primary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(hasCustomSVG ? Color.accentColor : Color.primary.opacity(0.1))
+                )
+        }
+        .buttonStyle(.plain)
+        .help(hasCustomSVG
+              ? "Using \((customSVGPath ?? "") as NSString).lastPathComponent). Click to choose a different SVG."
+              : "Choose an SVG file to use as the icon")
+    }
+
+    private var quickPickGrid: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 8), spacing: 8) {
+            ForEach(commonSymbols, id: \.self) { symbol in
+                Button(action: {
+                    iconType = .sfSymbol
+                    iconValue = symbol
+                }) {
+                    Image(systemName: symbol)
+                        .font(.system(size: 18))
+                        .frame(width: 30, height: 30)
+                        .background(iconType == .sfSymbol && iconValue == symbol
+                                    ? Color.accentColor.opacity(0.2) : Color.clear)
+                        .cornerRadius(6)
                 }
-                .padding(8)
-                .background(Color(NSColor.controlBackgroundColor))
-                .cornerRadius(6)
-            } else {
-                Button(action: { showingSVGPicker = true }) {
-                    Label("Import SVG...", systemImage: "square.and.arrow.down")
-                }
-            }
-
-            Text("Any SVG works - a logo, an icon you drew, anything made of vector shapes. Nothing to prepare: the app builds the SF Symbol around your artwork.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if customSVGPath != nil {
-                Divider()
-                iconScaleControl
+                .buttonStyle(.borderless)
+                .help(symbol)
             }
         }
     }
@@ -495,8 +389,9 @@ struct AddEditFavoriteSheet: View {
     /// did nothing would be worse than no control.
     private var iconScaleControl: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Text("Size")
+                HelpTip("100% matches a system symbol\u{2019}s size. Lower it if the icon looks heavier than its neighbours.")
                 Spacer(minLength: 0)
                 Text(iconScalePercentText)
                     .font(.system(.caption, design: .monospaced))
@@ -512,7 +407,7 @@ struct AddEditFavoriteSheet: View {
                 .help("Back to 100%")
             }
 
-            Slider(value: $iconScale, in: Favorite.iconScaleRange, step: 0.01) {
+            Slider(value: iconScaleSnapped, in: Favorite.iconScaleRange) {
                 Text("Icon size")
             } minimumValueLabel: {
                 Text("50%")
@@ -524,12 +419,16 @@ struct AddEditFavoriteSheet: View {
                     .foregroundColor(.secondary)
             }
             .labelsHidden()
-
-            Text("100% puts your artwork at exactly the size of a system SF Symbol. That is the right measurement and not always the right look - a wide or busy mark reads heavier than a narrow one at the same size - so nudge it down until it sits comfortably beside the rest of the sidebar. The preview follows as you drag.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// Snaps to whole percents without `Slider(step:)`, which makes macOS draw a
+    /// tick mark for every step - a hundred of them - as a dotted line.
+    private var iconScaleSnapped: Binding<Double> {
+        Binding(
+            get: { iconScale },
+            set: { iconScale = ($0 * 100).rounded() / 100 }
+        )
     }
 
     private var iconScalePercentText: String {
@@ -552,82 +451,228 @@ struct AddEditFavoriteSheet: View {
         .font(.caption)
     }
 
-    // MARK: - Preview
+    // MARK: - Footer
 
-    private var previewSection: some View {
-        // Stacked rather than side by side: a wide mark is drawn at its true
-        // proportions here - overhanging, the way Finder draws one - and a column
-        // narrow enough to sit beside the mock row would have had to shrink it
-        // back down, which is the one thing that makes a size preview useless.
-        VStack(alignment: .leading, spacing: 12) {
-            // Enlarged silhouette, so the user can see what survived.
-            VStack(alignment: .leading, spacing: 4) {
-                previewIcon(customImage: enlargedPreview)
-                    .frame(
-                        width: previewWidth(for: enlargedPreview, height: enlargedIconSize),
-                        height: enlargedIconSize
-                    )
-                    .foregroundColor(.primary)
-                    .padding(10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(Color(NSColor.textBackgroundColor))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(Color.secondary.opacity(0.25))
-                    )
-
-                Text("Enlarged")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+    /// Cancel on the left, Apply and Save on the right. Sized by an invisible copy
+    /// of the main window's footer content, so the two bars are exactly the same
+    /// height; the real buttons sit in an overlay, which cannot make it taller.
+    private var footerBar: some View {
+        HStack {
+            Spacer()
+            Button(action: {}) {
+                Label("Refresh", systemImage: "arrow.clockwise")
             }
-
-            // The size it will really be drawn at, in a mock sidebar row.
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    previewIcon(customImage: sidebarPreview)
-                        .frame(
-                            width: previewWidth(for: sidebarPreview, height: sidebarIconSize),
-                            height: sidebarIconSize
-                        )
-                        .foregroundColor(.accentColor)
-                    Text(name.isEmpty ? "Folder Name" : name)
-                        .font(.system(size: 13))
-                        .foregroundColor(name.isEmpty ? .secondary : .primary)
-                        .lineLimit(1)
-                    Spacer(minLength: 0)
+            .buttonStyle(.borderless)
+            .hidden()
+        }
+        .padding()
+        .background(Color(NSColor.windowBackgroundColor))
+        .overlay {
+            HStack {
+                // Deliberately not disabled while an Apply runs: the work is the
+                // coordinator's and completes either way, and taking away the
+                // escape hatch mid-operation is exactly when it is wanted most.
+                Button("Cancel") {
+                    closeAction()
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(NSColor.controlBackgroundColor))
-                )
+                .keyboardShortcut(.cancelAction)
 
-                Text("Sidebar size - 16 pt tall, monochrome, tinted by macOS. A wide icon overhangs the column here because it does in Finder too.")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+
+                if onApply != nil {
+                    applyButton
+                }
+
+                Button(isPersisted ? "Save" : "Add") {
+                    save()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!isValid || isApplying)
             }
+            .padding(.horizontal)
+        }
+    }
+
+    // MARK: - Layout blocks
+
+    private var editorContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            previewBlock
+            iconBlock
+            modeBlock
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+    }
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) { content() }
+            .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            )
+    }
 
-            if iconType == .custom {
-                Text("macOS draws sidebar icons as a flat monochrome silhouette, tinted to match the sidebar. Colour isn't possible there - that's a macOS rule, not ours.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private func sectionTitle(_ title: String, help: String? = nil) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.headline)
+            if let help {
+                HelpTip(help)
+            }
+        }
+    }
 
-                // What the artwork lost on the way in. Deliberately *below* the
-                // preview: the user should see the silhouette first, then read
-                // why it looks the way it does.
-                ForEach(artworkWarnings, id: \.self) { warning in
-                    warningRow(warning)
+    private var previewHelp: String {
+        var text = "Left: your icon enlarged. Right: the sidebar row at real size, named after the folder."
+        if iconType == .custom {
+            text += " macOS draws sidebar icons in a single colour, so colour isn't possible."
+        }
+        return text
+    }
+
+    private var previewBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Preview", help: previewHelp)
+
+            card {
+                HStack(alignment: .top, spacing: 12) {
+                    // Enlarged silhouette, so the user can see what survived.
+                    previewIcon(customImage: enlargedPreview)
+                        .frame(
+                            width: previewWidth(for: enlargedPreview, height: enlargedIconSize),
+                            height: enlargedIconSize
+                        )
+                        .foregroundColor(.primary)
+                        .padding(14.5)
+                        .frame(minWidth: 57, minHeight: 57)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color(NSColor.textBackgroundColor))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .strokeBorder(Color.secondary.opacity(0.25))
+                        )
+
+                    VStack(spacing: 8) {
+                        // The row as Finder will draw it: real size, real name.
+                        // A real (read-only) text field, so it is exactly the
+                        // same colour as the path field below it. The leading
+                        // spaces leave room for the icon drawn on top.
+                        TextField("", text: .constant(
+                            String(repeating: " ", count: 6) + (name.isEmpty ? "Choose a folder" : name)
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .allowsHitTesting(false)
+                        .accessibilityLabel("Favorite name")
+                        .overlay(alignment: .leading) {
+                            previewIcon(customImage: sidebarPreview)
+                                .frame(
+                                    width: previewWidth(for: sidebarPreview, height: sidebarIconSize),
+                                    height: sidebarIconSize
+                                )
+                                .foregroundColor(.accentColor)
+                                .padding(.leading, 7)
+                                .allowsHitTesting(false)
+                        }
+
+                        HStack(spacing: 8) {
+                            TextField("Folder Path", text: $folderPath)
+                                .textFieldStyle(.roundedBorder)
+                            Button("Browse...") {
+                                openFolderPicker()
+                            }
+                        }
+                    }
+                }
+
+                if targetIsVolume {
+                    HStack(spacing: 6) {
+                        Toggle("Show in Locations only", isOn: $locationsOnly)
+                        HelpTip("Icon Finder\u{2019}s own Locations row instead of adding a second one under Favorites.")
+                    }
+                }
+
+                if let conflict = conflictingFavorite {
+                    Label("\u{201C}\(conflict.name)\u{201D} already uses this folder.", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.callout)
+                    Text("A folder can only have one favorite - two would fight over the same sidebar row. Edit \u{201C}\(conflict.name)\u{201D} instead, or choose a different folder.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if let detection = iconAuthority {
+                    ownIconWarning(detection)
+                }
+
+                // What the artwork lost on the way in. Below the preview: the user
+                // sees the silhouette first, then reads why it looks the way it does.
+                if iconType == .custom {
+                    ForEach(artworkWarnings, id: \.self) { warning in
+                        warningRow(warning)
+                    }
                 }
             }
         }
-        .padding(.vertical, 4)
     }
+
+    private var iconBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Icon", help: "Type an SF Symbol name, pick one below, browse the full list, or choose any SVG file.")
+
+            card {
+                HStack(spacing: 8) {
+                    TextField("Symbol Name", text: symbolNameBinding)
+                        .textFieldStyle(.roundedBorder)
+                    if SymbolCatalog.isAvailable {
+                        Button("Browse All...") { showingSymbolBrowser = true }
+                            .help("Search every SF Symbol this Mac can draw")
+                    }
+                    svgButton
+                }
+
+                quickPickGrid
+
+                if hasCustomSVG {
+                    Divider()
+                    iconScaleControl
+                }
+            }
+        }
+    }
+
+    private var modeBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionTitle("Sidebar Icon Mode")
+
+            card {
+                HStack {
+                    Text("Mode")
+                    Spacer()
+                    Picker("Mode", selection: $mode) {
+                        Text("Sidebar icon only").tag(Favorite.Mode.regular)
+                        Text("Both icons").tag(Favorite.Mode.advanced)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 260)
+                    // Hover over either option to see what it does.
+                    .background(SegmentTooltips(
+                        labels: ["Sidebar icon only", "Both icons"],
+                        tips: [
+                            "Sets the sidebar glyph only. Nothing runs in the background.",
+                            "The folder keeps its own icon everywhere else (Desktop, windows, Dock). Adds a ~6 MB helper in System Settings."
+                        ]
+                    ))
+                }
+            }
+        }
+    }
+
 
     /// The width to give a preview slot `height` points tall.
     ///
@@ -980,6 +1025,7 @@ struct AddEditFavoriteSheet: View {
             // The stored file decides the symbol name - it may have been
             // de-duplicated against an icon another favorite already uses.
             customSVGPath = relativePath
+            iconType = .custom
             iconValue = (relativePath as NSString).deletingPathExtension
             refreshArtwork()
         } catch {
@@ -1020,10 +1066,85 @@ struct AddEditFavoriteSheet: View {
         // target as it will be rather than as it was.
         performRequestedIconRemoval()
         onSave(buildFavorite())
-        dismiss()
+        closeAction()
+    }
+}
+/// A small question mark in a circle. Hovering over it shows the explanation
+/// in a popover, after a brief pause so it does not flash as the mouse passes.
+struct HelpTip: View {
+    let text: String
+    @State private var isShown = false
+    @State private var pendingShow: DispatchWorkItem?
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Image(systemName: "questionmark.circle")
+            .font(.system(size: 12))
+            .foregroundColor(.secondary)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                pendingShow?.cancel()
+                if hovering {
+                    let item = DispatchWorkItem { isShown = true }
+                    pendingShow = item
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2, execute: item)
+                } else {
+                    isShown = false
+                }
+            }
+            .popover(isPresented: $isShown, arrowEdge: .bottom) {
+                Text(text)
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 320, alignment: .leading)
+                    .padding(12)
+            }
+            .accessibilityLabel("Help")
+            .accessibilityHint(text)
+    }
+}
+
+/// Gives each segment of a native segmented control its own hover tooltip.
+/// SwiftUI has no way to do this, so the underlying NSSegmentedControl is
+/// found by its segment labels and given the tooltips directly.
+private struct SegmentTooltips: NSViewRepresentable {
+    let labels: [String]
+    let tips: [String]
+
+    func makeNSView(context: Context) -> NSView {
+        NSView(frame: .zero)
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        // The control may not exist yet when this first runs, so try again shortly.
+        for delay in [0.0, 0.3, 1.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak view] in
+                guard let root = view?.window?.contentView else { return }
+                apply(in: root)
+            }
+        }
+    }
+
+    private func apply(in view: NSView) {
+        if let control = view as? NSSegmentedControl,
+           control.segmentCount == labels.count,
+           (0..<labels.count).allSatisfy({ control.label(forSegment: $0) == labels[$0] }) {
+            for (index, tip) in tips.enumerated() {
+                control.setToolTip(tip, forSegment: index)
+            }
+            return
+        }
+        for subview in view.subviews {
+            apply(in: subview)
+        }
     }
 }
 
 #Preview {
+    // The real window is 400 x 560 and the top 28 pt of it is the hidden title bar.
     AddEditFavoriteSheet(favorite: nil) { _ in }
+        .frame(width: 400, height: 532)
 }

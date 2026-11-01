@@ -18,7 +18,7 @@ struct SidebarFavoritesManagerApp: App {
 
     var body: some Scene {
         Window("Sidebar Favorites", id: "main") {
-            ContentView(showingAddSheet: $showingAddSheet)
+            StudioShellView(showingAddSheet: $showingAddSheet)
                 .environmentObject(configManager)
                 .environmentObject(coordinator)
         }
@@ -30,18 +30,6 @@ struct SidebarFavoritesManagerApp: App {
         .commands {
             AppCommands(showingAddSheet: $showingAddSheet)
         }
-
-        // The favorite editor. A window rather than a sheet so it can be moved
-        // and resized, and so it does not cover the list it is describing.
-        // One window per value: re-editing the same favorite focuses the window
-        // already showing it.
-        WindowGroup(id: "editor", for: String.self) { $token in
-            FavoriteEditorWindow(token: token ?? FavoriteEditorWindow.newFavoriteToken)
-                .environmentObject(configManager)
-                .environmentObject(coordinator)
-        }
-        .defaultSize(width: 480, height: 720)
-        .windowResizability(.contentMinSize)
 
         Settings {
             SettingsView()
@@ -67,9 +55,10 @@ struct AppCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("Add Favorite...") {
-                // The editor is its own window now, so this no longer depends on
-                // the main window being open.
-                openWindow(id: "editor", value: FavoriteEditorWindow.newFavoriteToken)
+                // The editor lives inside the main window; bring that window forward.
+                StudioNavigator.shared.editorToken = FavoriteEditorWindow.newFavoriteToken
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "main")
             }
             .keyboardShortcut("n", modifiers: .command)
         }

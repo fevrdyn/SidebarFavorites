@@ -164,7 +164,7 @@ enum ScreenshotRunner {
         env(AddEditFavoriteSheet(favorite: fav, onApply: { _ in nil }, onSave: { _ in }))
     }
     private static func mainView() -> AnyView {
-        env(ContentView(showingAddSheet: .constant(false)))
+        env(SidebarWorkspaceView(showingAddSheet: .constant(false)))
     }
 
     private static func shots() -> [Shot] {

@@ -1,27 +1,21 @@
 import SwiftUI
 
-/// Hosts the favorite editor in its own window.
+/// Hosts the favorite editor inside the main window.
 ///
-/// The editor used to be a sheet, which meant it could be neither moved nor
-/// resized and covered the list it was describing. A window scene fixes all
-/// three, and SwiftUI reuses one window per value - so editing the same
-/// favorite twice brings the existing window forward instead of stacking a
-/// second copy of it.
-///
-/// The scene value is a string rather than an optional UUID: `WindowGroup(for:)`
-/// hands back a binding to an optional of whatever it is given, and an optional
-/// UUID would arrive as a double optional. `newFavoriteToken` means "add".
+/// The token is a string rather than an optional UUID, and `newFavoriteToken`
+/// means "add". Cancel and Save live in the window's title strip; the editor
+/// reports to the strip through `StudioNavigator`.
 struct FavoriteEditorWindow: View {
     static let newFavoriteToken = "new"
 
     let token: String
+    /// Called when the editor should go away (Cancel or Save).
+    var onClose: () -> Void = {}
 
     @EnvironmentObject private var configManager: ConfigManager
     @EnvironmentObject private var coordinator: FavoriteSyncCoordinator
-    @Environment(\.dismiss) private var dismiss
 
-    /// The favorite being edited, read live from the config: the window may have
-    /// been left open while a reconcile rewrote the binding underneath it.
+    /// The favorite being edited, read live from the config.
     private var favorite: Favorite? {
         guard token != Self.newFavoriteToken, let id = UUID(uuidString: token) else { return nil }
         return configManager.getFavorite(id: id)
@@ -34,15 +28,12 @@ struct FavoriteEditorWindow: View {
         ) { updated in
             Task { _ = await persist(updated, restartFinder: false) }
         }
-        .navigationTitle(favorite == nil ? "Add Favorite" : "Edit Favorite")
+        .closing(onClose)
     }
 
-    /// Writes the favorite and lets the coordinator reconcile it.
-    ///
-    /// Same order the sheet used: the previous copy is read before the write so
-    /// the coordinator can compare old against new. Failures are published on
-    /// the coordinator rather than shown here - the main window already alerts
-    /// on `lastError`, and this window may be closed by the time one arrives.
+    /// Writes the favorite and lets the coordinator reconcile it. The previous
+    /// copy is read before the write so the coordinator can compare old with new.
+    /// Failures are published on the coordinator, which the main window alerts on.
     @discardableResult
     private func persist(_ favorite: Favorite, restartFinder: Bool) async -> String? {
         let previous = configManager.getFavorite(id: favorite.id)

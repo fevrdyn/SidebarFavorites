@@ -32,6 +32,7 @@ struct FavoriteRow: View {
                 HStack(spacing: 6) {
                     Text(favorite.listTitle)
                         .font(.headline)
+                        .lineLimit(1)
                     if favorite.mode == .advanced {
                         Text("BOTH ICONS")
                             // Hovering reveals the row's action buttons, and

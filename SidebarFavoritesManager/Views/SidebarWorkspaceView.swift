@@ -1,9 +1,11 @@
 import SwiftUI
 
-struct ContentView: View {
+struct SidebarWorkspaceView: View {
     @EnvironmentObject var configManager: ConfigManager
     @EnvironmentObject var coordinator: FavoriteSyncCoordinator
     @Binding var showingAddSheet: Bool
+    /// Drawn in the middle of the footer. The studio shell uses it for the workspace switcher.
+    var centerAccessory: AnyView = AnyView(EmptyView())
     @Environment(\.openWindow) private var openWindow
     @State private var showingError = false
     @State private var errorMessage = ""
@@ -54,7 +56,8 @@ struct ContentView: View {
                 .foregroundColor(.accentColor)
                 .help("Add Favorite")
             }
-            .padding()
+            .padding(.horizontal)
+            .frame(height: StudioMetrics.headerHeight)
             .background(Color(NSColor.windowBackgroundColor))
 
             Divider()
@@ -396,6 +399,7 @@ struct ContentView: View {
         }
         .padding()
         .background(Color(NSColor.windowBackgroundColor))
+        .overlay { centerAccessory }
     }
 
     private var statusText: String {
@@ -434,7 +438,7 @@ struct ContentView: View {
     /// favorite. The main window is no longer involved: the editor is its own
     /// window, so it can be moved, resized and left open beside the list.
     private func openEditor(_ token: String) {
-        openWindow(id: "editor", value: token)
+        StudioNavigator.shared.editorToken = token
     }
 
     private func persistFavorite(_ favorite: Favorite) async -> String? {
@@ -558,7 +562,7 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView(showingAddSheet: .constant(false))
+    SidebarWorkspaceView(showingAddSheet: .constant(false))
         .environmentObject(ConfigManager.shared)
         .environmentObject(FavoriteSyncCoordinator.shared)
 }
