@@ -82,6 +82,10 @@ enum FolderRecolor {
 
         let saturationScale = tint.saturation / referenceSaturation
         let valueScale = tint.value / referenceValue
+        // Near-white and grey folders: the stock front panel is already at full
+        // brightness over half its height, so scaling it up clips it to paper
+        // white. Instead, flatten the shading around the target brightness.
+        let pale = max(0, 1 - tint.saturation / 0.25)
 
         for index in 0..<(width * height) {
             let p = pixels + index * 4
@@ -98,10 +102,13 @@ enum FolderRecolor {
             let saturation = (top - min(r, g, b)) / top
             if saturation < minimumSaturation { continue }
 
+            let scaledValue = top * valueScale
+            let flatValue = tint.value + (top - 1) * (1 - 0.55 * pale)
+            let newValue = max(0, min(1, scaledValue + (flatValue - scaledValue) * pale))
             let (nr, ng, nb) = rgb(
                 hue: tint.hue,
                 saturation: min(1, saturation * saturationScale),
-                value: min(1, top * valueScale)
+                value: newValue
             )
             p[0] = UInt8(min(255, nr * alpha * 255 + 0.5))
             p[1] = UInt8(min(255, ng * alpha * 255 + 0.5))

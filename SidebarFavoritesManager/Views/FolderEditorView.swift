@@ -16,7 +16,7 @@ struct FolderSwatch: Identifiable {
     /// In the order they appear on the palette: five on the top row, then four
     /// on the bottom row, followed by the custom-colour button.
     static let all: [FolderSwatch] = [
-        FolderSwatch(id: "white", name: "White", tint: .init(hue: 0.60, saturation: 0.02, value: 0.97)),
+        FolderSwatch(id: "white", name: "White", tint: .init(hue: 0.0, saturation: 0.0, value: 0.953)),
         FolderSwatch(id: "blue", name: "Blue", tint: .init(hue: 0.626, saturation: 0.646, value: 0.883)),
         FolderSwatch(id: "green", name: "Green", tint: .init(hue: 0.38, saturation: 0.72, value: 0.78)),
         FolderSwatch(id: "indigo", name: "Indigo", tint: .init(hue: 0.67, saturation: 0.58, value: 0.85)),
@@ -44,6 +44,12 @@ private let folderCanvasScale: CGFloat = 0.9
 private enum FolderColorChoice: Equatable {
     case swatch(String)
     case custom
+}
+
+/// The folder colour at one step of the undo history.
+private struct ColorSnap: Equatable {
+    var choice: FolderColorChoice?
+    var customHex: String
 }
 
 /// Opens the system colour panel and reports every change.
@@ -86,6 +92,9 @@ struct FolderEditorView: View {
     @State private var selectedID: UUID?
     @State private var history: [[FolderArtwork]] = [[]]
     @State private var historyIndex = 0
+    @State private var colorHistory: [ColorSnap] = [ColorSnap(choice: nil, customHex: "")]
+    @State private var lastColorCommit = Date.distantPast
+    @State private var deleteKeyMonitor: Any?
 
     // MARK: - Derived values
 
@@ -101,6 +110,18 @@ struct FolderEditorView: View {
         var isDirectory: ObjCBool = false
         return FileManager.default.fileExists(atPath: expandedPath, isDirectory: &isDirectory)
             && isDirectory.boolValue
+    }
+
+    /// The selected artwork, when it is a symbol: the palette then colours it instead of the folder.
+    private var selectedSymbolIndex: Int? {
+        guard let id = selectedID else { return nil }
+        return artworks.firstIndex { $0.id == id && $0.kind == .symbol }
+    }
+    private var targetsSymbol: Bool { selectedSymbolIndex != nil }
+    private var symbolColorHex: String? { selectedSymbolIndex.flatMap { artworks[$0].colorHex } }
+
+    private static func symbolHex(for swatch: FolderSwatch) -> String {
+        swatch.id == "white" ? "#FFFFFF" : swatch.tint.hex
     }
 
     private var currentTint: FolderRecolor.Tint? {
@@ -143,8 +164,14 @@ struct FolderEditorView: View {
             footerBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { load() }
+        .onAppear { load(); installDeleteKey() }
+        .onChange(of: selectedID) { id in
+            // Selecting artwork takes the cursor out of the (read-only) name box, so Delete reaches the artwork.
+            if id != nil { NSApp.keyWindow?.makeFirstResponder(nil) }
+        }
         .onDisappear {
+            if let monitor = deleteKeyMonitor { NSEvent.removeMonitor(monitor) }
+            deleteKeyMonitor = nil
             let panel = NSColorPanel.shared
             panel.setTarget(nil)
             panel.setAction(nil)
@@ -184,6 +211,9 @@ struct FolderEditorView: View {
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .overlay(alignment: .bottom) { selectionBar }
+            .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                dropPictures(providers)
+            }
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 4)
@@ -218,32 +248,12 @@ struct FolderEditorView: View {
 
     private var controls: some View {
         HStack(alignment: .center, spacing: 16) {
-            toolPlaceholders
             palette
             sideButtons
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity)
-    }
-
-    /// Pen, marker and eraser. Not built yet; they hold their place.
-    private var toolPlaceholders: some View {
-        VStack(spacing: 6) {
-            toolPlaceholder("pencil.tip", name: "Pen")
-            toolPlaceholder("highlighter", name: "Marker")
-            toolPlaceholder("eraser", name: "Eraser")
-        }
-    }
-
-    private func toolPlaceholder(_ symbol: String, name: String) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 14))
-            .foregroundColor(.secondary)
-            .frame(width: 44, height: 26)
-            .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.08)))
-            .opacity(0.5)
-            .help("\(name) - coming later")
     }
 
     private var palette: some View {
@@ -265,22 +275,36 @@ struct FolderEditorView: View {
     }
 
     private func swatchButton(_ swatch: FolderSwatch) -> some View {
-        let isSelected = choice == FolderColorChoice.swatch(swatch.id)
+        let isSelected = targetsSymbol
+            ? symbolColorHex == Self.symbolHex(for: swatch)
+            : choice == FolderColorChoice.swatch(swatch.id)
         return Button {
-            choice = FolderColorChoice.swatch(swatch.id)
+            if let index = selectedSymbolIndex {
+                artworks[index].colorHex = Self.symbolHex(for: swatch)
+            } else {
+                choice = FolderColorChoice.swatch(swatch.id)
+            }
+            commitHistory()
         } label: {
             paletteCircle(fill: AnyShapeStyle(swatch.color), ringColor: swatch.color, isSelected: isSelected)
         }
         .buttonStyle(.plain)
-        .help(swatch.name)
+        .help(targetsSymbol ? "\(swatch.name) symbol" : swatch.name)
         .accessibilityLabel(swatch.name)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// The rainbow button: opens the system colour panel.
     private var customButton: some View {
-        let isSelected = choice == FolderColorChoice.custom
-        let custom = Color(nsColor: customTint.nsColor)
+        let symbolTint = symbolColorHex.flatMap { FolderRecolor.Tint(hex: $0) }
+        var isSelected = choice == FolderColorChoice.custom
+        var shown = customTint
+        if targetsSymbol {
+            let isSwatchColor = FolderSwatch.all.contains { Self.symbolHex(for: $0) == symbolColorHex }
+            isSelected = symbolTint != nil && !isSwatchColor
+            if let symbolTint { shown = symbolTint }
+        }
+        let custom = Color(nsColor: shown.nsColor)
         return Button {
             openColorPanel()
         } label: {
@@ -296,7 +320,7 @@ struct FolderEditorView: View {
             )
         }
         .buttonStyle(.plain)
-        .help("Custom colour...")
+        .help(targetsSymbol ? "Custom symbol colour..." : "Custom colour...")
         .accessibilityLabel("Custom colour")
     }
 
@@ -412,9 +436,15 @@ struct FolderEditorView: View {
         }
 
         colorPanel.onChange = { color in
-            customTint = FolderRecolor.Tint(color: color)
-            choice = FolderColorChoice.custom
+            if let index = selectedSymbolIndex {
+                artworks[index].colorHex = FolderRecolor.Tint(color: color).hex
+            } else {
+                customTint = FolderRecolor.Tint(color: color)
+                choice = FolderColorChoice.custom
+            }
+            commitHistory(coalesce: true)
         }
+        colorHistory = [currentColorSnap]
     }
 
     // MARK: - Artwork
@@ -451,26 +481,85 @@ struct FolderEditorView: View {
         commitHistory()
     }
 
-    private func clearDesign() {
-        choice = nil
-        selectedID = nil
-        if !artworks.isEmpty {
-            artworks = []
-            commitHistory()
+    /// Delete / Backspace removes the selected artwork, unless the person is typing.
+    private func installDeleteKey() {
+        guard deleteKeyMonitor == nil else { return }
+        deleteKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Cmd+Z undo, Cmd+Shift+Z redo (left to the path field while you are typing in it).
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.keyCode == 6, mods == .command || mods == [.command, .shift], !showingArtPicker {
+                if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.string == path { return event }
+                if mods == .command { undo() } else { redo() }
+                return nil
+            }
+            guard event.keyCode == 51 || event.keyCode == 117,
+                  let id = selectedID, !showingArtPicker else { return event }
+            if NSApp.keyWindow?.firstResponder is NSText { return event }
+            deleteArtwork(id)
+            return nil
         }
     }
 
+    /// A picture dragged from Finder onto the folder becomes artwork.
+    private func dropPictures(_ providers: [NSItemProvider]) -> Bool {
+        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) else { return false }
+        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+            var url: URL?
+            if let data = item as? Data { url = URL(dataRepresentation: data, relativeTo: nil) }
+            else if let u = item as? URL { url = u }
+            guard let url else { return }
+            DispatchQueue.main.async {
+                if let name = FolderArtworkStore.importImage(from: url) {
+                    addArtwork(.image, name)
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "That picture couldn\u{2019}t be read"
+                    alert.informativeText = "Try a PNG, JPEG or SVG file."
+                    alert.runModal()
+                }
+            }
+        }
+        return true
+    }
+
+    private func clearDesign() {
+        choice = nil
+        selectedID = nil
+        if !artworks.isEmpty { artworks = [] }
+        commitHistory()
+    }
+
     /// Remembers the artwork as it is now, unless nothing changed.
-    private func commitHistory() {
-        guard artworks != history[historyIndex] else { return }
-        history = Array(history.prefix(historyIndex + 1)) + [artworks]
-        historyIndex = history.count - 1
+    private var currentColorSnap: ColorSnap {
+        ColorSnap(choice: choice, customHex: customTint.hex)
+    }
+
+    private func commitHistory(coalesce: Bool = false) {
+        let snap = currentColorSnap
+        guard artworks != history[historyIndex] || snap != colorHistory[historyIndex] else { return }
+        // Dragging in the colour panel fires many changes: fold them into one undo step.
+        if coalesce, historyIndex > 0, historyIndex == history.count - 1,
+           Date().timeIntervalSince(lastColorCommit) < 1.0 {
+            history[historyIndex] = artworks
+            colorHistory[historyIndex] = snap
+        } else {
+            history = Array(history.prefix(historyIndex + 1)) + [artworks]
+            colorHistory = Array(colorHistory.prefix(historyIndex + 1)) + [snap]
+            historyIndex = history.count - 1
+        }
+        if coalesce { lastColorCommit = Date() }
+    }
+
+    private func restoreColor(_ snap: ColorSnap) {
+        choice = snap.choice
+        if let tint = FolderRecolor.Tint(hex: snap.customHex) { customTint = tint }
     }
 
     private func undo() {
         guard historyIndex > 0 else { return }
         historyIndex -= 1
         artworks = history[historyIndex]
+        restoreColor(colorHistory[historyIndex])
         selectedID = nil
     }
 
@@ -478,11 +567,18 @@ struct FolderEditorView: View {
         guard historyIndex < history.count - 1 else { return }
         historyIndex += 1
         artworks = history[historyIndex]
+        restoreColor(colorHistory[historyIndex])
         selectedID = nil
     }
 
     private func openColorPanel() {
+        if let index = selectedSymbolIndex {
+            let current = artworks[index].colorHex.flatMap { FolderRecolor.Tint(hex: $0) } ?? FolderRecolor.Tint(hex: "#FFFFFF")
+            colorPanel.show(initial: (current ?? customTint).nsColor)
+            return
+        }
         choice = FolderColorChoice.custom
+        commitHistory(coalesce: true)
         colorPanel.show(initial: customTint.nsColor)
     }
 
@@ -589,6 +685,8 @@ struct FolderArtPicker: View {
     @State private var symbolSearch = ""
     @State private var symbols: [SymbolCatalog.Symbol] = []
     @State private var isLoadingSymbols = true
+    @State private var hideTechnical = true
+    @State private var technicalNames: Set<String> = []
     @State private var pickedSymbol: String?
 
     @State private var emojiSearch = ""
@@ -642,6 +740,7 @@ struct FolderArtPicker: View {
         symbols = loaded.isEmpty
             ? Self.fallbackSymbols.map { SymbolCatalog.Symbol(name: $0, categories: [], keywords: []) }
             : loaded
+        technicalNames = Set(symbols.filter { Self.isTechnical($0) }.map { $0.name })
         isLoadingSymbols = false
     }
 
@@ -655,14 +754,60 @@ struct FolderArtPicker: View {
 
     // MARK: Symbols
 
+    private static let technicalCategories: Set<String> = [
+        "shapes", "arrows", "indices", "math", "keyboard", "textformatting", "editing"
+    ]
+    private static let genericCategories: Set<String> = ["all", "whatsnew", "multicolor", "variablecolor"]
+    private static let shapeWords: Set<String> = [
+        "circle", "square", "rectangle", "capsule", "triangle", "diamond", "oval", "hexagon",
+        "octagon", "pentagon", "seal", "fill", "filled", "inset", "lefthalf", "righthalf",
+        "tophalf", "bottomhalf", "dashed", "dotted", "slash", "portrait", "landscape"
+    ]
+    private static let languageSuffixes: Set<String> = [
+        "ar", "hi", "he", "th", "ja", "ko", "zh", "bn", "gu", "kn", "ml", "mr", "my", "or",
+        "pa", "ta", "te", "ur", "km", "rtl"
+    ]
+
+    /// Plain building blocks nobody wants on a folder: numbers and letters
+    /// ("8.calendar", "a.circle", "1.lane"), language variants, bare shapes
+    /// ("circle.fill"), and symbols Apple files only under technical categories.
+    private static func isTechnical(_ symbol: SymbolCatalog.Symbol) -> Bool {
+        let parts = symbol.name.split(separator: ".").map(String.init)
+        if let first = parts.first, first.allSatisfy({ $0.isNumber }) || first.count == 1 { return true }
+        if parts.count > 1, let last = parts.last, languageSuffixes.contains(last) { return true }
+        if !parts.isEmpty, parts.allSatisfy({ shapeWords.contains($0) }) { return true }
+        if symbol.categories.contains("indices") { return true }
+        let real = symbol.categories.filter { !genericCategories.contains($0) }
+        return !real.isEmpty && real.allSatisfy { technicalCategories.contains($0) }
+    }
+
+    /// What the grid starts from when nothing is typed.
+    private var browsePool: [SymbolCatalog.Symbol] {
+        hideTechnical ? symbols.filter { !technicalNames.contains($0.name) } : symbols
+    }
+
+    /// Searching looks through everything, so "circle" or "arrow" still finds them.
     private var symbolResults: [SymbolCatalog.Symbol] {
-        SymbolCatalog.search(symbolSearch, in: symbols)
+        let typing = !symbolSearch.trimmingCharacters(in: .whitespaces).isEmpty
+        return SymbolCatalog.search(symbolSearch, in: typing ? symbols : browsePool)
     }
 
     private var symbolsTab: some View {
         VStack(spacing: 8) {
-            TextField(isLoadingSymbols ? "Search symbols" : "Search \(symbols.count) symbols", text: $symbolSearch)
-                .textFieldStyle(.roundedBorder)
+            HStack(spacing: 6) {
+                TextField(isLoadingSymbols ? "Search symbols" : "Search \(browsePool.count) symbols", text: $symbolSearch)
+                    .textFieldStyle(.roundedBorder)
+                Menu {
+                    Toggle("Hide shapes, numbers and arrows", isOn: $hideTechnical)
+                } label: {
+                    Image(systemName: hideTechnical ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 17))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Filter symbols. Search always looks through all of them.")
+            }
 
             if isLoadingSymbols {
                 ProgressView()
@@ -783,7 +928,7 @@ struct FolderArtPicker: View {
                         Image(systemName: "photo.badge.plus")
                             .font(.system(size: 26))
                             .foregroundColor(.secondary)
-                        Text("Choose a PNG, SVG or other picture")
+                        Text("Choose a picture, or drag one onto the folder")
                             .font(.callout)
                             .foregroundColor(.secondary)
                     }

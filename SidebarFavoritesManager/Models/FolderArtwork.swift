@@ -19,6 +19,8 @@ struct FolderArtwork: Codable, Equatable, Identifiable {
     var y: Double = 0
     /// The side of the square it sits in, as a fraction of the panel's height.
     var size: Double = 0.45
+    /// A symbol's colour as "#RRGGBB". Nil means the default soft white.
+    var colorHex: String?
 }
 
 /// Where the folder's front panel sits on the 1024 px picture of the folder.

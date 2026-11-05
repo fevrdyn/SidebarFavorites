@@ -167,6 +167,8 @@ enum FolderIconApplier {
         if hasCustomIconFile(atPath: path) {
             log("  (clearing the old icon first so Finder redraws)")
             try? await setIcon(nil, atPath: path)
+            // Give Finder a moment to show the plain folder first, like the switch does.
+            try? await Task.sleep(nanoseconds: 700_000_000)
         }
         try await setIcon(image, atPath: path)
     }
@@ -215,6 +217,7 @@ enum FolderIconApplier {
         log("  -> macOS said: \(succeeded ? "ok" : "REFUSED")")
         if succeeded {
             nudgeFinder(atPath: path)
+            await MainActor.run { NSWorkspace.shared.noteFileSystemChanged(path) }
         }
         guard succeeded else {
             throw ApplyError(message: image == nil

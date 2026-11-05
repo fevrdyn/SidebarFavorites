@@ -11,6 +11,13 @@ struct FolderArtworkContent: View {
             .frame(width: box, height: box)
     }
 
+    private var symbolColor: Color {
+        if let hex = artwork.colorHex, let tint = FolderRecolor.Tint(hex: hex) {
+            return Color(nsColor: tint.nsColor)
+        }
+        return Color.white.opacity(0.92)
+    }
+
     @ViewBuilder
     private var content: some View {
         switch artwork.kind {
@@ -18,7 +25,7 @@ struct FolderArtworkContent: View {
             Image(systemName: artwork.value)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color.white.opacity(0.92))
+                .foregroundColor(symbolColor)
                 .padding(box * 0.08)
                 .shadow(color: Color.black.opacity(0.25), radius: box * 0.02, y: box * 0.01)
         case .emoji:
