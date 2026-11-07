@@ -22,6 +22,7 @@ struct IconListWorkspaceView: View {
 
     @ObservedObject private var store = StudioIconStore.shared
     @State private var itemPendingRemoval: StudioIconItem?
+    @State private var isDropTargeted = false
 
     private var items: [StudioIconItem] {
         store.items(of: config.kind)
@@ -40,6 +41,18 @@ struct IconListWorkspaceView: View {
 
             Divider()
             footer
+        }
+        // Folders can be dropped onto the list from Finder.
+        .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
+            handleFolderDrop(providers)
+        }
+        .overlay {
+            if isDropTargeted && config.kind == .folder {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
         }
         .onAppear { store.refresh() }
         // Coming back from Finder, a moved or deleted item should turn orange.
@@ -92,8 +105,14 @@ struct IconListWorkspaceView: View {
                         revealHelp: config.revealHelp,
                         onExport: { IconExporter.export(item) },
                         onReveal: { NSWorkspace.shared.activateFileViewerSelecting([item.url]) },
-                        canEdit: config.kind == .folder,
-                        onEdit: { StudioNavigator.shared.folderEditorItemID = item.id },
+                        canEdit: true,
+                        onEdit: {
+                            if config.kind == .app {
+                                StudioNavigator.shared.appEditorItemID = item.id
+                            } else {
+                                StudioNavigator.shared.folderEditorItemID = item.id
+                            }
+                        },
                         onDelete: { itemPendingRemoval = item },
                         showsToggle: config.kind == .folder,
                         onToggle: { isOn in
@@ -157,6 +176,55 @@ struct IconListWorkspaceView: View {
                 store.remove(item)
             }
         }
+    }
+
+    /// Collects the dropped files from the background threads that deliver them.
+    private final class DroppedURLs {
+        private let lock = NSLock()
+        private var urls: [URL] = []
+        func add(_ url: URL) { lock.lock(); urls.append(url); lock.unlock() }
+        var all: [URL] { lock.lock(); defer { lock.unlock() }; return urls }
+    }
+
+    private func handleFolderDrop(_ providers: [NSItemProvider]) -> Bool {
+        guard config.kind == .folder else { return false }
+        let found = DroppedURLs()
+        let group = DispatchGroup()
+        for provider in providers where provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { dropped, _ in
+                if let data = dropped as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                    found.add(url)
+                } else if let url = dropped as? URL {
+                    found.add(url)
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { addDropped(found.all) }
+        return true
+    }
+
+    /// Adds the dropped folders. Files, and app bundles (which are folders to the system but
+    /// belong in the Apps tab), are refused with a message.
+    private func addDropped(_ urls: [URL]) {
+        var refused: [String] = []
+        for url in urls {
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey])
+            if values?.isDirectory == true, values?.isPackage != true {
+                store.add(kind: .folder, url: url)
+            } else {
+                refused.append(url.lastPathComponent)
+            }
+        }
+        guard !refused.isEmpty else { return }
+        let alert = NSAlert()
+        alert.messageText = refused.count == 1
+            ? "\u{201C}\(refused[0])\u{201D} is not a folder"
+            : "\(refused.count) of the dropped items are not folders"
+        let names = refused.prefix(5).joined(separator: ", ")
+        alert.informativeText = "Only folders can be added here. Apps go in the Apps tab.\n\nNot added: \(names)\(refused.count > 5 ? ", ..." : "")"
+        alert.runModal()
     }
 
     private func addItem() {

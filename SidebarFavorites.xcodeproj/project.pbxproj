@@ -16,6 +16,7 @@
 		0F8876DFC17A4748651D0F9E /* SFLBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 22FE2A878EB571297FCD1F44 /* SFLBridge.m */; };
 		1BA30C8D35178D0BFC2CD53D /* AppsWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0165AEE34E3661E6F3CC0C5D /* AppsWorkspaceView.swift */; };
 		25145B574968F42275F591B8 /* FavoriteRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE5DFC21AD083DA6299058D /* FavoriteRow.swift */; };
+		27C456621E6F027B3095F1A3 /* AppIconRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9129DC8EC4A68B1F750BD127 /* AppIconRenderer.swift */; };
 		2AA92A2970C9BD177BA88272 /* IconAuthority.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C0596EA28980B7E1FB021CA /* IconAuthority.swift */; };
 		2DD1119E2CAFE4A1DB22773F /* FolderArtwork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02D5585E04239ADE07CD47C2 /* FolderArtwork.swift */; };
 		3449045C82D58B47741DDADC /* AddEditFavoriteSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F28792F283612A4FC2B12E28 /* AddEditFavoriteSheet.swift */; };
@@ -25,6 +26,7 @@
 		4ADB732FAB8E4AE835B12766 /* SidebarItemManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F93EADB4893728A39BC0F09 /* SidebarItemManager.swift */; };
 		4BAB0D71C84DB2038A79BE40 /* OSTypeAllocator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F66B275483C4FD4F33A8C20C /* OSTypeAllocator.swift */; };
 		4EE036577423D8C60164D5D4 /* FavoriteEditorWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C4F19E1C4C373AA935F4520 /* FavoriteEditorWindow.swift */; };
+		65903B9A1C0151F1B4569383 /* AppIconEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7239C77894C7FFBF999D22E8 /* AppIconEditorView.swift */; };
 		673744E11E88C626D10983E1 /* SigningIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55902C37DF49AE55C76108F9 /* SigningIdentity.swift */; };
 		700C45512FC185127BD205CF /* StudioShellView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7925F5A3A5F32BF1AD30B151 /* StudioShellView.swift */; };
 		72276FCADC9D17B0C0B672F0 /* DiagnosticsReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AADB10E08DC32E4C2702A1 /* DiagnosticsReport.swift */; };
@@ -42,7 +44,9 @@
 		9C00E53E5D16EA48775FEBCF /* FavoriteSyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D4B63B58DDC796A0F81626E /* FavoriteSyncCoordinator.swift */; };
 		9EDAEAEFA06C0318B3818E0C /* MigrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B2A2855190B236E1340ABA /* MigrationService.swift */; };
 		9F2551B574084477E0003FC0 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4182B79F6FBC4556EECCB96 /* SettingsView.swift */; };
+		A08287D17B2B25F9B35CFD65 /* AppArtworkExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1867D7E5FD049899EB1E8AFF /* AppArtworkExtractor.swift */; };
 		A14BFDE748D5355D2A2265EE /* FinderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78EB6AA1AB975B77E369ECE /* FinderService.swift */; };
+		A1904A419D84DE7C2A29C9E4 /* AppIconCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 726D89A0B9D00B730260D30A /* AppIconCache.swift */; };
 		A5C170C9BEBCFFE9C572BC96 /* Favorite.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94654D92B069C68956C0342E /* Favorite.swift */; };
 		B06924040AB9DD750BF9F782 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3A2A9F10C3173CBCF0F69A60 /* Assets.xcassets */; };
 		B3A163475D38630811EAA0B6 /* ScreenshotMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A28DBF1CDC2C2F927D7DF9E /* ScreenshotMode.swift */; };
@@ -69,6 +73,7 @@
 		0BD2B23709F81767F72E8B18 /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = AppIcon.icns; sourceTree = "<group>"; };
 		0C4F19E1C4C373AA935F4520 /* FavoriteEditorWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteEditorWindow.swift; sourceTree = "<group>"; };
 		147636508548FA032461B12F /* SidebarFavoritesManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SidebarFavoritesManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1867D7E5FD049899EB1E8AFF /* AppArtworkExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppArtworkExtractor.swift; sourceTree = "<group>"; };
 		1C0596EA28980B7E1FB021CA /* IconAuthority.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconAuthority.swift; sourceTree = "<group>"; };
 		1E62EDE72F4C95ED46D7AD2E /* Config.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Config.swift; sourceTree = "<group>"; };
 		22FE2A878EB571297FCD1F44 /* SFLBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = SFLBridge.m; sourceTree = "<group>"; };
@@ -86,6 +91,8 @@
 		64B4E7CE302D4F437E7ECBF8 /* FolderIconApplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderIconApplier.swift; sourceTree = "<group>"; };
 		663ACAF19B1E4F8C7487E348 /* FolderEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderEditorView.swift; sourceTree = "<group>"; };
 		6BE5DFC21AD083DA6299058D /* FavoriteRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteRow.swift; sourceTree = "<group>"; };
+		7239C77894C7FFBF999D22E8 /* AppIconEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconEditorView.swift; sourceTree = "<group>"; };
+		726D89A0B9D00B730260D30A /* AppIconCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconCache.swift; sourceTree = "<group>"; };
 		7925F5A3A5F32BF1AD30B151 /* StudioShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioShellView.swift; sourceTree = "<group>"; };
 		7A28DBF1CDC2C2F927D7DF9E /* ScreenshotMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotMode.swift; sourceTree = "<group>"; };
 		7F93EADB4893728A39BC0F09 /* SidebarItemManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItemManager.swift; sourceTree = "<group>"; };
@@ -93,6 +100,7 @@
 		8A6AC9E2A9ADFA908C097740 /* IconListWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconListWorkspaceView.swift; sourceTree = "<group>"; };
 		8BE2C6190D205670F5798516 /* HelperIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = HelperIcon.icns; sourceTree = "<group>"; };
 		8C85C7DE889DDB7DA0738E6D /* StudioIconItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioIconItem.swift; sourceTree = "<group>"; };
+		9129DC8EC4A68B1F750BD127 /* AppIconRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconRenderer.swift; sourceTree = "<group>"; };
 		94654D92B069C68956C0342E /* Favorite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Favorite.swift; sourceTree = "<group>"; };
 		964D72C333D20CADB16FF635 /* FolderArtworkViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderArtworkViews.swift; sourceTree = "<group>"; };
 		9A517AD2444DD245EAD100C9 /* FoldersWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoldersWorkspaceView.swift; sourceTree = "<group>"; };
@@ -184,6 +192,9 @@
 		EC6B0ACA83F7A825C9E3CA98 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				1867D7E5FD049899EB1E8AFF /* AppArtworkExtractor.swift */,
+				726D89A0B9D00B730260D30A /* AppIconCache.swift */,
+				9129DC8EC4A68B1F750BD127 /* AppIconRenderer.swift */,
 				4026AAEABF2BA4DF82DE4E62 /* AppVersion.swift */,
 				D312F98B36C9C2366D4C592F /* CloudFolder.swift */,
 				E3439D15842AECAE640371AE /* CodeSigner.swift */,
@@ -228,6 +239,7 @@
 			isa = PBXGroup;
 			children = (
 				F28792F283612A4FC2B12E28 /* AddEditFavoriteSheet.swift */,
+				7239C77894C7FFBF999D22E8 /* AppIconEditorView.swift */,
 				0165AEE34E3661E6F3CC0C5D /* AppsWorkspaceView.swift */,
 				0C4F19E1C4C373AA935F4520 /* FavoriteEditorWindow.swift */,
 				6BE5DFC21AD083DA6299058D /* FavoriteRow.swift */,
@@ -366,6 +378,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				3449045C82D58B47741DDADC /* AddEditFavoriteSheet.swift in Sources */,
+				A08287D17B2B25F9B35CFD65 /* AppArtworkExtractor.swift in Sources */,
+				A1904A419D84DE7C2A29C9E4 /* AppIconCache.swift in Sources */,
+				65903B9A1C0151F1B4569383 /* AppIconEditorView.swift in Sources */,
+				27C456621E6F027B3095F1A3 /* AppIconRenderer.swift in Sources */,
 				B3A8B76884C393684672A21B /* AppVersion.swift in Sources */,
 				1BA30C8D35178D0BFC2CD53D /* AppsWorkspaceView.swift in Sources */,
 				8240DFB55255FB9A49024408 /* CloudFolder.swift in Sources */,

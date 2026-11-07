@@ -27,7 +27,7 @@ enum IconExporter {
         case .app:
             panel.allowedContentTypes = [UTType(filenameExtension: "icns") ?? .data]
             panel.nameFieldStringValue = "\(item.displayName).icns"
-            panel.message = "Export the app's current icon as an .icns file"
+            panel.message = item.hasAppDesign ? "Export your designed icon as an .icns file" : "Export the app's current icon as an .icns file"
         case .folder:
             panel.allowedContentTypes = [.png]
             panel.nameFieldStringValue = "\(item.displayName).png"
@@ -38,10 +38,16 @@ enum IconExporter {
 
         let url = item.url
         let kind = item.kind
+        let appItem = item
         Task { @MainActor in
             do {
                 switch kind {
-                case .app: try await writeICNS(for: url, to: destination)
+                case .app:
+                    if appItem.hasAppDesign {
+                        try await writeICNS(designOf: appItem, to: destination)
+                    } else {
+                        try await writeICNS(for: url, to: destination)
+                    }
                 case .folder: try await writePNG(for: url, pixels: 1024, to: destination)
                 }
             } catch {
@@ -87,6 +93,22 @@ enum IconExporter {
             images[pixels] = await icon(for: url, pixels: pixels) ?? fallbackIcon(for: url)
         }
 
+        try packICNS(images, to: destination)
+    }
+
+    /// The icon designed in the Apps editor, drawn fresh at each size.
+    static func writeICNS(designOf item: StudioIconItem, to destination: URL) async throws {
+        var images: [Int: NSImage] = [:]
+        for pixels in [16, 32, 64, 128, 256, 512, 1024] {
+            guard let image = await AppIconRenderer.render(item, pixels: pixels) else {
+                throw ExportError(message: "The icon could not be drawn.")
+            }
+            images[pixels] = image
+        }
+        try packICNS(images, to: destination)
+    }
+
+    private static func packICNS(_ images: [Int: NSImage], to destination: URL) throws {
         let fm = FileManager.default
         let iconset = fm.temporaryDirectory
             .appendingPathComponent("studio-\(UUID().uuidString).iconset", isDirectory: true)

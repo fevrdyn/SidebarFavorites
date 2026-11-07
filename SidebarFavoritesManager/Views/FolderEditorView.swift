@@ -63,6 +63,18 @@ final class ColorPanelBridge: NSObject, ObservableObject {
         panel.isContinuous = true
         panel.showsAlpha = false
         panel.color = initial
+        // Open next to the editor window instead of in macOS's remembered corner.
+        // Once it is open it stays wherever it is moved.
+        if !panel.isVisible, let window = NSApp.keyWindow ?? NSApp.mainWindow, window !== panel {
+            let frame = window.frame
+            var origin = NSPoint(x: frame.maxX + 12, y: frame.maxY - panel.frame.height)
+            if let area = window.screen?.visibleFrame {
+                if origin.x + panel.frame.width > area.maxX { origin.x = frame.minX - panel.frame.width - 12 }
+                origin.x = max(origin.x, area.minX + 12)
+                origin.y = min(max(origin.y, area.minY), area.maxY - panel.frame.height)
+            }
+            panel.setFrameOrigin(origin)
+        }
         panel.orderFront(nil)
     }
 
@@ -95,6 +107,7 @@ struct FolderEditorView: View {
     @State private var colorHistory: [ColorSnap] = [ColorSnap(choice: nil, customHex: "")]
     @State private var lastColorCommit = Date.distantPast
     @State private var deleteKeyMonitor: Any?
+    @State private var canvasSide: CGFloat = 300
 
     // MARK: - Derived values
 
@@ -210,6 +223,8 @@ struct FolderEditorView: View {
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            .onAppear { canvasSide = side }
+            .onChange(of: side) { canvasSide = $0 }
             .overlay(alignment: .bottom) { selectionBar }
             .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
                 dropPictures(providers)
@@ -481,6 +496,15 @@ struct FolderEditorView: View {
         commitHistory()
     }
 
+    /// One arrow-key step, in points on screen. The canvas is drawn at `folderCanvasScale`.
+    private func nudgeArtwork(_ id: UUID, by direction: CGPoint, points: CGFloat) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }) else { return }
+        let panel = FolderPanel.rect(in: max(1, canvasSide))
+        artworks[index].x += Double(direction.x * points / max(1, panel.width * folderCanvasScale))
+        artworks[index].y += Double(direction.y * points / max(1, panel.height * folderCanvasScale))
+        commitHistory(coalesce: true)
+    }
+
     /// Delete / Backspace removes the selected artwork, unless the person is typing.
     private func installDeleteKey() {
         guard deleteKeyMonitor == nil else { return }
@@ -490,6 +514,18 @@ struct FolderEditorView: View {
             if event.keyCode == 6, mods == .command || mods == [.command, .shift], !showingArtPicker {
                 if let text = NSApp.keyWindow?.firstResponder as? NSTextView, text.string == path { return event }
                 if mods == .command { undo() } else { redo() }
+                return nil
+            }
+            // Arrow keys nudge the selected artwork by 1 pt (10 pt with Shift).
+            let arrows: [UInt16: CGPoint] = [
+                123: CGPoint(x: -1, y: 0), 124: CGPoint(x: 1, y: 0),
+                125: CGPoint(x: 0, y: 1), 126: CGPoint(x: 0, y: -1)
+            ]
+            if let direction = arrows[event.keyCode], let id = selectedID, !showingArtPicker,
+               mods.intersection([.command, .option, .control]).isEmpty,
+               NSApp.keyWindow !== NSColorPanel.shared,
+               !(NSApp.keyWindow?.firstResponder is NSText) {
+                nudgeArtwork(id, by: direction, points: mods.contains(.shift) ? 10 : 1)
                 return nil
             }
             guard event.keyCode == 51 || event.keyCode == 117,

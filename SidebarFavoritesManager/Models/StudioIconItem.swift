@@ -23,6 +23,8 @@ struct StudioIconItem: Identifiable, Codable, Equatable {
     /// Folders only: symbols, emoji and pictures placed on the front panel.
     /// Optional for the same reason: older saved lists have no such key.
     var artwork: [FolderArtwork]?
+    /// Apps only: the colours of the icon body. Optional for the same reason; nil is the dark grey.
+    var appLook: AppIconLook?
 
     var url: URL { URL(fileURLWithPath: path) }
 
@@ -41,6 +43,9 @@ struct StudioIconItem: Identifiable, Codable, Equatable {
 
     /// Folders only: the designed icon is on the folder right now.
     var isCustomIconOn: Bool { customIconApplied ?? false }
+
+    /// Apps only: an icon has been designed (colour or artwork).
+    var hasAppDesign: Bool { kind == .app && (appLook != nil || !(artwork ?? []).isEmpty) }
 
     /// Green dot when true. False means the item no longer points at anything.
     var isLinked: Bool {
@@ -95,6 +100,7 @@ final class StudioIconStore: ObservableObject {
 
     func remove(_ item: StudioIconItem) {
         items.removeAll { $0.id == item.id }
+        AppIconCache.remove(for: item)
         save()
     }
 

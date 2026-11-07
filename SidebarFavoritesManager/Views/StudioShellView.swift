@@ -90,6 +90,8 @@ final class StudioNavigator: ObservableObject {
     @Published var editorToken: String?
     /// The folder item the folder editor shows. `nil` means the list.
     @Published var folderEditorItemID: UUID?
+    /// The app item the app icon editor shows. `nil` means the list.
+    @Published var appEditorItemID: UUID?
 
     // The editor reports here so the shell can show its Cancel and Save.
     @Published var editorCanSave = false
@@ -132,6 +134,8 @@ struct StudioShellView: View {
                         .allowsHitTesting(navigator.folderEditorItemID == nil)
                 case .apps:
                     AppsWorkspaceView()
+                        .opacity(navigator.appEditorItemID == nil ? 1 : 0)
+                        .allowsHitTesting(navigator.appEditorItemID == nil)
                 }
 
                 if let token = navigator.editorToken {
@@ -149,11 +153,19 @@ struct StudioShellView: View {
                     )
                     .id(folderID)
                 }
+
+                if let appID = navigator.appEditorItemID {
+                    AppIconEditorView(
+                        itemID: appID,
+                        onClose: { navigator.appEditorItemID = nil }
+                    )
+                    .id(appID)
+                }
             }
         }
         // The workspace switcher, centred along the top of the window.
         .overlay(alignment: .top) {
-            if navigator.editorToken == nil && navigator.folderEditorItemID == nil {
+            if navigator.editorToken == nil && navigator.folderEditorItemID == nil && navigator.appEditorItemID == nil {
                 WorkspaceSwitcher(selection: $selection)
                     .padding(.top, StudioMetrics.switcherTop)
                     .offset(x: 44)
