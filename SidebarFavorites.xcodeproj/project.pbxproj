@@ -52,6 +52,7 @@
 		B3A163475D38630811EAA0B6 /* ScreenshotMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A28DBF1CDC2C2F927D7DF9E /* ScreenshotMode.swift */; };
 		B3A8B76884C393684672A21B /* AppVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4026AAEABF2BA4DF82DE4E62 /* AppVersion.swift */; };
 		B5630DACD3A3AED9AE4162DB /* AppIcon-master-1024.png in Resources */ = {isa = PBXBuildFile; fileRef = F205EFE110E32159192B8D79 /* AppIcon-master-1024.png */; };
+		BB4C05B435EA98889542C737 /* AppIconApplier.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46FD56DE8D460D9227AF09E /* AppIconApplier.swift */; };
 		BC8588899C9973FA08B935D4 /* SVGThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57F4170519CA0B2F3C4CC1D5 /* SVGThumbnailView.swift */; };
 		C270B44ABC83B25D248FE504 /* HelperIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 8BE2C6190D205670F5798516 /* HelperIcon.icns */; };
 		C304D82537E34BE413811D41 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCCCF6C1FEB4B5E963E2DC81 /* MenuBarView.swift */; };
@@ -112,6 +113,7 @@
 		B8E9F42D9171878ADD9CC1E1 /* SVGGeometryParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SVGGeometryParser.swift; sourceTree = "<group>"; };
 		BF9F07154C38DA5E6099DCBC /* CoreThemeCatalogWriter.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CoreThemeCatalogWriter.m; sourceTree = "<group>"; };
 		C2D4A50A883319EFEAB89B57 /* FinderSyncAppGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FinderSyncAppGenerator.swift; sourceTree = "<group>"; };
+		C46FD56DE8D460D9227AF09E /* AppIconApplier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconApplier.swift; sourceTree = "<group>"; };
 		C675A7C722D7988D48C49A11 /* SFLBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = SFLBridge.h; sourceTree = "<group>"; };
 		C986C47A1DC8F408F12B568D /* MigrationConsentSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationConsentSheet.swift; sourceTree = "<group>"; };
 		CB28CC7CA854D6E918A1DDB4 /* SymbolBrowserSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymbolBrowserSheet.swift; sourceTree = "<group>"; };
@@ -193,6 +195,7 @@
 			isa = PBXGroup;
 			children = (
 				1867D7E5FD049899EB1E8AFF /* AppArtworkExtractor.swift */,
+				C46FD56DE8D460D9227AF09E /* AppIconApplier.swift */,
 				726D89A0B9D00B730260D30A /* AppIconCache.swift */,
 				9129DC8EC4A68B1F750BD127 /* AppIconRenderer.swift */,
 				4026AAEABF2BA4DF82DE4E62 /* AppVersion.swift */,
@@ -379,6 +382,7 @@
 			files = (
 				3449045C82D58B47741DDADC /* AddEditFavoriteSheet.swift in Sources */,
 				A08287D17B2B25F9B35CFD65 /* AppArtworkExtractor.swift in Sources */,
+				BB4C05B435EA98889542C737 /* AppIconApplier.swift in Sources */,
 				A1904A419D84DE7C2A29C9E4 /* AppIconCache.swift in Sources */,
 				65903B9A1C0151F1B4569383 /* AppIconEditorView.swift in Sources */,
 				27C456621E6F027B3095F1A3 /* AppIconRenderer.swift in Sources */,

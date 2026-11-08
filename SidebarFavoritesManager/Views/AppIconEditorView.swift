@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 
 /// The shape of a macOS app icon on its 1024 px canvas: the body is 824 px
@@ -116,6 +117,17 @@ private func appColor(_ hex: String) -> Color {
     FolderRecolor.Tint(hex: hex).map { Color(nsColor: $0.nsColor) } ?? Color.gray
 }
 
+/// The colour half way between two colours given as hex.
+private func averageColor(_ first: String, _ second: String) -> Color {
+    guard let a = FolderRecolor.Tint(hex: first)?.nsColor.usingColorSpace(.sRGB),
+          let b = FolderRecolor.Tint(hex: second)?.nsColor.usingColorSpace(.sRGB) else { return appColor(first) }
+    return Color(.sRGB,
+                 red: Double((a.redComponent + b.redComponent) / 2),
+                 green: Double((a.greenComponent + b.greenComponent) / 2),
+                 blue: Double((a.blueComponent + b.blueComponent) / 2),
+                 opacity: 1)
+}
+
 private func hexString(of color: Color) -> String {
     FolderRecolor.Tint(color: NSColor(color)).hex
 }
@@ -123,8 +135,13 @@ private func hexString(of color: Color) -> String {
 /// The icon body, drawn in code: a gradient, a thin bright rim along the top
 /// edge, an inner glow and a soft shadow.
 struct AppSquircleView: View {
+    /// The body and its shadow, and the glow and rim light, can be drawn apart: the
+    /// glow is then put on top of the artwork, so a picture can't flatten it.
+    enum Layer { case all, body, highlights }
+
     let side: CGFloat
     var look: AppIconLook = .dark
+    var layer: Layer = .all
 
     private var rimStops: [Gradient.Stop] {
         if look.isLight {
@@ -151,21 +168,26 @@ struct AppSquircleView: View {
         let size = side * AppIconGrid.bodyRatio
         let shape = AppIconShape()
         ZStack {
-            shape.fill(look.fill(size: size))
-            // Inner glow: light bodies only. Apple's dark icons have none.
-            if look.isLight {
-                shape
-                    .strokeBorder(Color.white.opacity(0.10), lineWidth: size * 0.03)
-                    .blur(radius: size * 0.02)
-                    .clipShape(shape)
+            if layer != .highlights {
+                shape.fill(look.fill(size: size))
             }
-            shape.strokeBorder(
-                LinearGradient(stops: rimStops, startPoint: .top, endPoint: .bottom),
-                lineWidth: max(1, size * (look.isLight ? 0.004 : 0.006))
-            )
+            if layer != .body {
+                // Inner glow: light bodies only. Apple's dark icons have none.
+                if look.isLight {
+                    shape
+                        .strokeBorder(Color.white.opacity(0.10), lineWidth: size * 0.03)
+                        .blur(radius: size * 0.02)
+                        .clipShape(shape)
+                }
+                shape.strokeBorder(
+                    LinearGradient(stops: rimStops, startPoint: .top, endPoint: .bottom),
+                    lineWidth: max(1, size * (look.isLight ? 0.004 : 0.006))
+                )
+            }
         }
         .frame(width: size, height: size)
-        .shadow(color: Color.black.opacity(0.35), radius: size * 0.03, x: 0, y: size * 0.015)
+        .shadow(color: layer == .highlights ? Color.clear : Color.black.opacity(0.35),
+                radius: size * 0.03, x: 0, y: size * 0.015)
         .frame(width: side, height: side)
     }
 }
@@ -180,7 +202,7 @@ struct AppIconCompositeView: View {
     var body: some View {
         let size = side * AppIconGrid.bodyRatio
         ZStack(alignment: .topLeading) {
-            AppSquircleView(side: side, look: look)
+            AppSquircleView(side: side, look: look, layer: .body)
 
             ZStack {
                 ForEach(artworks) { artwork in
@@ -197,6 +219,11 @@ struct AppIconCompositeView: View {
                     .frame(width: size, height: size)
                     .frame(width: side, height: side)
             }
+
+            // The glow and rim light go on top of the artwork, so a picture that covers
+            // the whole icon doesn't make it flat.
+            AppSquircleView(side: side, look: look, layer: .highlights)
+                .allowsHitTesting(false)
         }
         .frame(width: side, height: side)
     }
@@ -214,6 +241,9 @@ struct AppIconCanvas: View {
     var onDuplicate: (UUID) -> Void = { _ in }
     var onRecenter: (UUID) -> Void = { _ in }
     var onDelete: (UUID) -> Void = { _ in }
+    var onMoveUp: (UUID) -> Void = { _ in }
+    var onMoveDown: (UUID) -> Void = { _ in }
+    var onRemoveColor: (UUID) -> Void = { _ in }
 
     @State private var moveStart: (id: UUID, x: Double, y: Double)?
     @State private var snappedX = false
@@ -279,10 +309,24 @@ struct AppIconCanvas: View {
                 .onTapGesture { selectedID = artwork.id }
                 .contextMenu {
                     Button("Duplicate") { onDuplicate(artwork.id) }
+                        .keyboardShortcut("d", modifiers: .command)
                     Button("Recenter") { onRecenter(artwork.id) }
+                    if artwork.kind == .image, artwork.colorHex != nil {
+                        Button("Remove Colour") { onRemoveColor(artwork.id) }
+                    }
+                    Divider()
+                    Button("Bring Forward") { onMoveUp(artwork.id) }
+                        .keyboardShortcut(.upArrow, modifiers: .command)
+                        .disabled(artwork.id == artworks.last?.id)
+                    Button("Send Backward") { onMoveDown(artwork.id) }
+                        .keyboardShortcut(.downArrow, modifiers: .command)
+                        .disabled(artwork.id == artworks.first?.id)
+                    Divider()
                     Button("Delete", role: .destructive) { onDelete(artwork.id) }
+                        .keyboardShortcut(.delete, modifiers: [])
                     Divider()
                     Button("Confirm position") { selectedID = nil }
+                        .keyboardShortcut(.return, modifiers: [])
                 }
 
             if isSelected {
@@ -294,9 +338,11 @@ struct AppIconCanvas: View {
                 ForEach(corners, id: \.self) { corner in
                     handle(for: artwork, corner: corner, box: box, center: center)
                 }
+                rotateHandle(for: artwork, box: box, center: center)
             }
         }
-        .frame(width: box + 24, height: box + 24)
+        .rotationEffect(.degrees(artwork.angle))
+        .frame(width: box + 80, height: box + 80)
         .position(center)
     }
 
@@ -309,12 +355,50 @@ struct AppIconCanvas: View {
             .gesture(
                 DragGesture(minimumDistance: 0, coordinateSpace: .named(spaceName))
                     .onChanged { value in
-                        let reach = max(abs(value.location.x - center.x), abs(value.location.y - center.y))
+                        // The pointer is measured in the artwork's own, turned, frame.
+                        let turn = -artwork.angle * Double.pi / 180
+                        let dx = Double(value.location.x - center.x)
+                        let dy = Double(value.location.y - center.y)
+                        let localX = dx * cos(turn) - dy * sin(turn)
+                        let localY = dx * sin(turn) + dy * cos(turn)
+                        let reach = CGFloat(max(abs(localX), abs(localY)))
                         let newSize = Double(reach * 2 / bodyRect.height)
                         update(artwork.id) { $0.size = min(max(newSize, 0.06), 1.3) }
                     }
                     .onEnded { _ in onCommit() }
             )
+    }
+
+    /// The round handle above the selected artwork. Drag it to turn the artwork;
+    /// hold Shift to turn in 15-degree steps.
+    private func rotateHandle(for artwork: FolderArtwork, box: CGFloat, center: CGPoint) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.8))
+                .frame(width: 1, height: 14)
+                .offset(y: -(box / 2 + 7))
+                .allowsHitTesting(false)
+
+            Circle()
+                .fill(Color.accentColor)
+                .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                .frame(width: 11, height: 11)
+                .offset(y: -(box / 2 + 20))
+                .gesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .named(spaceName))
+                        .onChanged { value in
+                            let dx = Double(value.location.x - center.x)
+                            let dy = Double(value.location.y - center.y)
+                            var degrees = atan2(dx, -dy) * 180 / Double.pi
+                            if NSEvent.modifierFlags.contains(.shift) {
+                                degrees = (degrees / 15).rounded() * 15
+                            }
+                            if degrees <= -180 { degrees += 360 }
+                            update(artwork.id) { $0.rotation = abs(degrees) < 0.05 ? nil : degrees }
+                        }
+                        .onEnded { _ in onCommit() }
+                )
+        }
     }
 
     private func moveGesture(for artwork: FolderArtwork) -> some Gesture {
@@ -323,6 +407,13 @@ struct AppIconCanvas: View {
                 if moveStart?.id != artwork.id {
                     moveStart = (artwork.id, artwork.x, artwork.y)
                     selectedID = artwork.id
+                    // Holding Option leaves a copy where it was, under the one being moved.
+                    if NSEvent.modifierFlags.contains(.option),
+                       let index = artworks.firstIndex(where: { $0.id == artwork.id }) {
+                        var copy = artworks[index]
+                        copy.id = UUID()
+                        artworks.insert(copy, at: index)
+                    }
                 }
                 guard let start = moveStart else { return }
 
@@ -398,7 +489,7 @@ struct AppIconEditorView: View {
     /// The selected artwork, when it is a symbol: the palette then colours it instead of the icon.
     private var selectedSymbolIndex: Int? {
         guard let id = selectedID else { return nil }
-        return artworks.firstIndex { $0.id == id && $0.kind == .symbol }
+        return artworks.firstIndex { $0.id == id && ($0.kind == .symbol || $0.kind == .image) }
     }
     private var targetsSymbol: Bool { selectedSymbolIndex != nil }
     private var symbolColorHex: String? { selectedSymbolIndex.flatMap { artworks[$0].colorHex } }
@@ -407,28 +498,37 @@ struct AppIconEditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                readOnlyField(item?.displayName ?? "")
-                readOnlyField(item?.displayPath ?? "")
-                if originalSaved {
-                    Text("The app's original icon is saved, so it can always be put back.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 20)
-
+            // (The app's path is in the title strip, and the note about the saved
+            // original is under the palette.)
             canvas
 
             controls
+
+            if originalSaved {
+                Text("The app's original icon is saved, so it can always be put back.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             Divider()
 
             footerBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            // The app's path sits in the window's title strip, level with the traffic lights.
+            Text(item?.displayPath ?? "")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 90)
+                .offset(y: -(StudioMetrics.titleStripHeight - 9))
+                .allowsHitTesting(false)
+        }
         .onAppear {
             load()
             installKeys()
@@ -465,7 +565,10 @@ struct AppIconEditorView: View {
                 onCommit: { commitHistory() },
                 onDuplicate: duplicateArtwork,
                 onRecenter: recenterArtwork,
-                onDelete: deleteArtwork
+                onDelete: deleteArtwork,
+                onMoveUp: moveUp,
+                onMoveDown: moveDown,
+                onRemoveColor: removeColor
             )
             .frame(width: side, height: side)
             .frame(width: geometry.size.width, height: geometry.size.height)
@@ -485,22 +588,25 @@ struct AppIconEditorView: View {
     @ViewBuilder
     private var selectionBar: some View {
         if let id = selectedID {
+            let hasShadow = artworks.first { $0.id == id }?.hasShadow ?? false
             HStack(spacing: 10) {
                 barButton("scope", help: "Recenter") { recenterArtwork(id) }
-                barButton("plus.square.on.square", help: "Duplicate") { duplicateArtwork(id) }
-                barButton("trash", help: "Delete") { deleteArtwork(id) }
+                barButton("square.filled.on.square", help: hasShadow ? "Drop shadow: on" : "Drop shadow: off", isOn: hasShadow) {
+                    toggleShadow(id)
+                }
+                // Duplicate and Delete are in the right-click menu and on the keyboard.
                 barButton("checkmark", help: "Confirm position") { selectedID = nil }
             }
             .padding(.bottom, 2)
         }
     }
 
-    private func barButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+    private func barButton(_ symbol: String, help: String, isOn: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .medium))
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(Color.primary.opacity(0.12)))
+                .background(Circle().fill(Color.primary.opacity(isOn ? 0.3 : 0.12)))
         }
         .buttonStyle(.plain)
         .help(help)
@@ -558,7 +664,7 @@ struct AppIconEditorView: View {
             look = preset.look
             commitHistory()
         } label: {
-            paletteCircle(fill: AnyShapeStyle(gradient), ringColor: appColor(preset.look.topHex), isSelected: isSelected)
+            paletteCircle(fill: AnyShapeStyle(gradient), ringColor: preset.look.isLight ? appColor(preset.look.topHex) : averageColor(preset.look.topHex, preset.look.bottomHex), isSelected: isSelected)
         }
         .buttonStyle(.plain)
         .help(preset.name)
@@ -581,7 +687,7 @@ struct AppIconEditorView: View {
             paletteCircle(fill: AnyShapeStyle(swatch.color), ringColor: swatch.color, isSelected: isSelected)
         }
         .buttonStyle(.plain)
-        .help("\(swatch.name) symbol")
+        // No tooltip on the swatches: the colour speaks for itself.
         .accessibilityLabel(swatch.name)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -694,7 +800,7 @@ struct AppIconEditorView: View {
             paletteCircle(fill: AnyShapeStyle(rainbow), ringColor: shown, innerFill: AnyShapeStyle(shown), isSelected: isSelected)
         }
         .buttonStyle(.plain)
-        .help("Custom symbol colour...")
+        // No tooltip on the custom colour either.
         .accessibilityLabel("Custom symbol colour")
     }
 
@@ -756,6 +862,7 @@ struct AppIconEditorView: View {
             HStack(spacing: 8) {
                 Button("Cancel") { onClose() }
                     .keyboardShortcut(.cancelAction)
+                    .help("Close without saving")
 
                 Spacer()
 
@@ -779,6 +886,7 @@ struct AppIconEditorView: View {
 
                 Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
+                    .help("Save this design")
             }
             .padding(.horizontal)
         }
@@ -806,6 +914,7 @@ struct AppIconEditorView: View {
             onClose()
             return
         }
+        let wasOn = current.isCustomIconOn
         current.artwork = artworks.isEmpty ? nil : artworks
         current.appLook = look == .dark ? nil : look
         store.update(current)
@@ -814,6 +923,15 @@ struct AppIconEditorView: View {
             keeping: Set(store.items.flatMap { $0.artwork ?? [] }.filter { $0.kind == .image }.map { $0.value })
         )
         onClose()
+
+        // An app whose icon is switched on gets the changed design put on it.
+        if wasOn {
+            let saved = current
+            let store = self.store
+            Task {
+                await AppIconApplier.saved(saved, store: store)
+            }
+        }
     }
 
     private func clearDesign() {
@@ -883,6 +1001,33 @@ struct AppIconEditorView: View {
         commitHistory()
     }
 
+    private func toggleShadow(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }) else { return }
+        artworks[index].shadow = !artworks[index].hasShadow
+        commitHistory()
+    }
+
+    /// A picture goes back to its own colours.
+    private func removeColor(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }) else { return }
+        artworks[index].colorHex = nil
+        commitHistory()
+    }
+
+    /// One layer towards the front.
+    private func moveUp(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }), index < artworks.count - 1 else { return }
+        artworks.swapAt(index, index + 1)
+        commitHistory()
+    }
+
+    /// One layer towards the back.
+    private func moveDown(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }), index > 0 else { return }
+        artworks.swapAt(index, index - 1)
+        commitHistory()
+    }
+
     private func recenterArtwork(_ id: UUID) {
         guard let index = artworks.firstIndex(where: { $0.id == id }) else { return }
         artworks[index].x = 0
@@ -942,6 +1087,24 @@ struct AppIconEditorView: View {
             let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             if event.keyCode == 6, mods == .command || mods == [.command, .shift] {
                 if mods == .command { undo() } else { redo() }
+                return nil
+            }
+            // Cmd+D duplicates; Cmd+Up and Cmd+Down move it one layer up or down.
+            // (Arrow keys carry two extra flags, so those are ignored when checking for Command.)
+            if mods.subtracting([.numericPad, .function]) == .command, let id = selectedID, !showingArtPicker {
+                switch event.keyCode {
+                case 2: duplicateArtwork(id); return nil
+                case 126: moveUp(id); return nil
+                case 125: moveDown(id); return nil
+                default: break
+                }
+            }
+            // Return confirms a selected piece of artwork and Escape lets go of it. With
+            // nothing selected they save and cancel, as before.
+            if event.keyCode == 36 || event.keyCode == 76 || event.keyCode == 53,
+               selectedID != nil, !showingArtPicker,
+               mods.intersection([.command, .option, .control]).isEmpty {
+                selectedID = nil
                 return nil
             }
             if event.keyCode == 51 || event.keyCode == 117, let id = selectedID {

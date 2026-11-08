@@ -108,6 +108,9 @@ struct FolderEditorView: View {
     @State private var lastColorCommit = Date.distantPast
     @State private var deleteKeyMonitor: Any?
     @State private var canvasSide: CGFloat = 300
+    /// The text box is showing in place of the palette.
+    @State private var editingText = false
+    @FocusState private var textFieldFocused: Bool
 
     // MARK: - Derived values
 
@@ -128,7 +131,7 @@ struct FolderEditorView: View {
     /// The selected artwork, when it is a symbol: the palette then colours it instead of the folder.
     private var selectedSymbolIndex: Int? {
         guard let id = selectedID else { return nil }
-        return artworks.firstIndex { $0.id == id && $0.kind == .symbol }
+        return artworks.firstIndex { $0.id == id && ($0.kind == .symbol || $0.kind == .text || $0.kind == .image) }
     }
     private var targetsSymbol: Bool { selectedSymbolIndex != nil }
     private var symbolColorHex: String? { selectedSymbolIndex.flatMap { artworks[$0].colorHex } }
@@ -153,16 +156,12 @@ struct FolderEditorView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 8) {
-                // Named after the folder, like a Finder row. Read-only.
-                TextField("", text: .constant(folderName))
-                    .textFieldStyle(.roundedBorder)
-                    .allowsHitTesting(false)
-                    .accessibilityLabel("Folder name")
-
+                // (The folder's name is in the title strip: see the overlay below.)
                 HStack(spacing: 8) {
                     TextField("Folder Path", text: $path)
                         .textFieldStyle(.roundedBorder)
                     Button("Browse...") { browse() }
+                        .help("Choose the folder to style")
                 }
             }
             .padding(.horizontal, 16)
@@ -177,10 +176,28 @@ struct FolderEditorView: View {
             footerBar
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .top) {
+            // The folder's name sits in the window's title strip, level with the traffic lights.
+            Text(folderName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .padding(.horizontal, 90)
+                .offset(y: -(StudioMetrics.titleStripHeight - 9))
+                .allowsHitTesting(false)
+        }
         .onAppear { load(); installDeleteKey() }
         .onChange(of: selectedID) { id in
             // Selecting artwork takes the cursor out of the (read-only) name box, so Delete reaches the artwork.
-            if id != nil { NSApp.keyWindow?.makeFirstResponder(nil) }
+            if id != nil, !editingText { NSApp.keyWindow?.makeFirstResponder(nil) }
+            // The text box only belongs to text.
+            if let id, !artworks.contains(where: { $0.id == id && $0.kind == .text }) { editingText = false }
+            if id == nil { editingText = false }
+            // A text left empty is not kept.
+            let before = artworks.count
+            artworks.removeAll { $0.kind == .text && $0.id != id && $0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+            if artworks.count != before { commitHistory() }
         }
         .onDisappear {
             if let monitor = deleteKeyMonitor { NSEvent.removeMonitor(monitor) }
@@ -213,7 +230,11 @@ struct FolderEditorView: View {
                         onCommit: { commitHistory() },
                         onDuplicate: duplicateArtwork,
                         onRecenter: recenterArtwork,
-                        onDelete: deleteArtwork
+                        onDelete: deleteArtwork,
+                        onMoveUp: moveUp,
+                        onMoveDown: moveDown,
+                        onRemoveColor: removeColor,
+                        onDoubleTap: openTextBox
                     )
                     .frame(width: side, height: side)
                     .scaleEffect(folderCanvasScale)
@@ -238,22 +259,34 @@ struct FolderEditorView: View {
     @ViewBuilder
     private var selectionBar: some View {
         if let id = selectedID {
+            let hasShadow = artworks.first { $0.id == id }?.hasShadow ?? false
             HStack(spacing: 10) {
+                if selectedTextIndex != nil {
+                    Button { editingText.toggle() } label: {
+                        Text("Aa")
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 28, height: 28)
+                            .background(Circle().fill(Color.primary.opacity(0.12)))
+                    }
+                    .buttonStyle(.plain)
+                    .help(editingText ? "Hide the text box" : "Edit the text")
+                }
                 barButton("scope", help: "Recenter") { recenterArtwork(id) }
-                barButton("plus.square.on.square", help: "Duplicate") { duplicateArtwork(id) }
-                barButton("trash", help: "Delete") { deleteArtwork(id) }
+                barButton("square.filled.on.square", help: hasShadow ? "Drop shadow: on" : "Drop shadow: off", isOn: hasShadow) {
+                    toggleShadow(id)
+                }
                 barButton("checkmark", help: "Confirm position") { selectedID = nil }
             }
             .padding(.bottom, 2)
         }
     }
 
-    private func barButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
+    private func barButton(_ symbol: String, help: String, isOn: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 12, weight: .medium))
                 .frame(width: 28, height: 28)
-                .background(Circle().fill(Color.primary.opacity(0.12)))
+                .background(Circle().fill(Color.primary.opacity(isOn ? 0.3 : 0.12)))
         }
         .buttonStyle(.plain)
         .help(help)
@@ -264,8 +297,15 @@ struct FolderEditorView: View {
     private var controls: some View {
         HStack(alignment: .center, spacing: 16) {
             palette
+                .opacity(showsTextEditor ? 0 : 1)
+                .allowsHitTesting(!showsTextEditor)
             sideButtons
+                .opacity(showsTextEditor ? 0 : 1)
+                .allowsHitTesting(!showsTextEditor)
         }
+        // The text box grows out of the Aa button, over the palette.
+        .overlay(alignment: .topTrailing) { textEditorOverlay }
+        .animation(.easeInOut(duration: 0.25), value: showsTextEditor)
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .frame(maxWidth: .infinity)
@@ -304,7 +344,7 @@ struct FolderEditorView: View {
             paletteCircle(fill: AnyShapeStyle(swatch.color), ringColor: swatch.color, isSelected: isSelected)
         }
         .buttonStyle(.plain)
-        .help(targetsSymbol ? "\(swatch.name) symbol" : swatch.name)
+        // No tooltip on the swatches: the colour speaks for itself.
         .accessibilityLabel(swatch.name)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -335,7 +375,7 @@ struct FolderEditorView: View {
             )
         }
         .buttonStyle(.plain)
-        .help(targetsSymbol ? "Custom symbol colour..." : "Custom colour...")
+        // No tooltip on the custom colour either.
         .accessibilityLabel("Custom colour")
     }
 
@@ -355,14 +395,17 @@ struct FolderEditorView: View {
 
     private var sideButtons: some View {
         VStack(spacing: 12.5) {
-            // Text on the folder. Not built yet.
-            Text("Aa")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.secondary)
-                .frame(width: folderSideButtonDiameter, height: folderSideButtonDiameter)
-                .background(Circle().fill(Color.primary.opacity(0.08)))
-                .opacity(0.5)
-                .help("Text - coming later")
+            Button {
+                addText()
+            } label: {
+                Text("Aa")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: folderSideButtonDiameter, height: folderSideButtonDiameter)
+                    .background(Circle().fill(Color.primary.opacity(0.08)))
+            }
+            .buttonStyle(.plain)
+            .help("Add text")
 
             Button {
                 showingArtPicker.toggle()
@@ -401,6 +444,7 @@ struct FolderEditorView: View {
             HStack(spacing: 8) {
                 Button("Cancel") { onClose() }
                     .keyboardShortcut(.cancelAction)
+                    .help("Close without saving")
 
                 Spacer()
 
@@ -426,6 +470,7 @@ struct FolderEditorView: View {
                 Button("Save") { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(!isValid)
+                    .help("Save this design")
             }
             .padding(.horizontal)
         }
@@ -462,6 +507,129 @@ struct FolderEditorView: View {
         colorHistory = [currentColorSnap]
     }
 
+    // MARK: - Text
+
+    private var selectedTextIndex: Int? {
+        guard let id = selectedID else { return nil }
+        return artworks.firstIndex { $0.id == id && $0.kind == .text }
+    }
+
+    /// The text box under the folder: shown while text is being edited, in place of the palette.
+    private var showsTextEditor: Bool { editingText && selectedTextIndex != nil }
+
+    private var textBinding: Binding<String> {
+        Binding(
+            get: { selectedTextIndex.map { artworks[$0].value } ?? "" },
+            set: { newValue in
+                guard let index = selectedTextIndex else { return }
+                artworks[index].value = String(newValue.prefix(36))
+                commitHistory(coalesce: true)
+            }
+        )
+    }
+
+    /// As wide as the palette and the buttons beside it.
+    private var textBoxWidth: CGFloat {
+        5 * folderPaletteDiameter + 4 * 14 + 16 + folderSideButtonDiameter
+    }
+
+    /// The text box. A pill grows to the left out of the Aa button, then the font
+    /// choices drop down from under it. Both are always in the view, so the
+    /// animation can run both ways.
+    private var textEditorOverlay: some View {
+        let open = showsTextEditor
+        let index = selectedTextIndex
+        let value = index.map { artworks[$0].value } ?? ""
+        let style = FolderTextFont.style(index.flatMap { artworks[$0].fontStyle })
+        return VStack(alignment: .trailing, spacing: 10) {
+            HStack(spacing: 0) {
+                TextField("Type something", text: textBinding)
+                    .textFieldStyle(.plain)
+                    .focused($textFieldFocused)
+                    .onSubmit { selectedID = nil }
+                    .padding(.leading, 14)
+                    .opacity(open ? 1 : 0)
+                Text("\(value.count)/36")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .opacity(open ? 1 : 0)
+                Button {
+                    editingText = false
+                } label: {
+                    Text("Aa")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: folderSideButtonDiameter, height: folderSideButtonDiameter)
+                        .background(Circle().fill(Color.primary.opacity(open ? 0.08 : 0)))
+                        .opacity(open ? 1 : 0)
+                }
+                .buttonStyle(.plain)
+                .help("Colours")
+            }
+            .frame(width: open ? textBoxWidth : folderSideButtonDiameter,
+                   height: folderSideButtonDiameter,
+                   alignment: .trailing)
+            .clipShape(Capsule())
+            .overlay(Capsule().strokeBorder(Color.primary.opacity(open ? 0.3 : 0), lineWidth: 1.5))
+            .allowsHitTesting(open)
+
+            if open {
+                fontChips(selected: style)
+                    .frame(width: textBoxWidth)
+                    .transition(.asymmetric(
+                        insertion: AnyTransition.move(edge: .top)
+                            .combined(with: .opacity)
+                            .animation(.easeOut(duration: 0.5).delay(0.4)),
+                        removal: AnyTransition.opacity.animation(.easeIn(duration: 0.3))
+                    ))
+            }
+        }
+        .onChange(of: showsTextEditor) { isOpen in
+            if isOpen {
+                // After the pill has grown.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { textFieldFocused = true }
+            } else {
+                textFieldFocused = false
+            }
+        }
+    }
+
+    private func fontChips(selected style: FolderTextFont) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(FolderTextFont.allCases, id: \.self) { entry in
+                    let isSelected = style == entry
+                    Button {
+                        if let current = selectedTextIndex {
+                            artworks[current].fontStyle = entry == .classic ? nil : entry.rawValue
+                            commitHistory()
+                        }
+                    } label: {
+                        Text(entry.label)
+                            .font(entry.font(size: 13))
+                            .foregroundColor(isSelected ? .primary : .secondary)
+                            .padding(.horizontal, 10)
+                            .frame(height: 26)
+                            .background(Capsule().fill(Color.primary.opacity(isSelected ? 0.14 : 0)))
+                    }
+                    .buttonStyle(.plain)
+                    .help("\(entry.label) font")
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    /// Adds an empty text and opens the text box. It is not kept if it is left empty.
+    private func addText() {
+        var artwork = FolderArtwork(kind: .text, value: "")
+        artwork.size = 0.35
+        artworks.append(artwork)
+        editingText = true
+        selectedID = artwork.id
+    }
+
     // MARK: - Artwork
 
     private func addArtwork(_ kind: FolderArtwork.Kind, _ value: String) {
@@ -480,6 +648,40 @@ struct FolderEditorView: View {
         copy.y = min(original.y + 0.06, 0.5)
         artworks.append(copy)
         selectedID = copy.id
+        commitHistory()
+    }
+
+    /// One layer towards the front.
+    private func moveUp(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }), index < artworks.count - 1 else { return }
+        artworks.swapAt(index, index + 1)
+        commitHistory()
+    }
+
+    /// One layer towards the back.
+    private func moveDown(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }), index > 0 else { return }
+        artworks.swapAt(index, index - 1)
+        commitHistory()
+    }
+
+    /// Double-clicking a text opens its text box.
+    private func openTextBox(_ id: UUID) {
+        guard artworks.contains(where: { $0.id == id && $0.kind == .text }) else { return }
+        editingText = true
+        selectedID = id
+    }
+
+    /// A picture goes back to its own colours.
+    private func removeColor(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }) else { return }
+        artworks[index].colorHex = nil
+        commitHistory()
+    }
+
+    private func toggleShadow(_ id: UUID) {
+        guard let index = artworks.firstIndex(where: { $0.id == id }) else { return }
+        artworks[index].shadow = !artworks[index].hasShadow
         commitHistory()
     }
 
@@ -526,6 +728,34 @@ struct FolderEditorView: View {
                NSApp.keyWindow !== NSColorPanel.shared,
                !(NSApp.keyWindow?.firstResponder is NSText) {
                 nudgeArtwork(id, by: direction, points: mods.contains(.shift) ? 10 : 1)
+                return nil
+            }
+            // Cmd+D duplicates; Cmd+Up and Cmd+Down move it one layer up or down.
+            if mods.subtracting([.numericPad, .function]) == .command, let id = selectedID, !showingArtPicker,
+               NSApp.keyWindow !== NSColorPanel.shared,
+               !(NSApp.keyWindow?.firstResponder is NSText) {
+                switch event.keyCode {
+                case 2: duplicateArtwork(id); return nil
+                case 126: moveUp(id); return nil
+                case 125: moveDown(id); return nil
+                default: break
+                }
+            }
+            // Return confirms a selected piece of artwork. With nothing selected it saves, as before.
+            if event.keyCode == 36 || event.keyCode == 76, selectedID != nil, !showingArtPicker,
+               mods.intersection([.command, .option, .control]).isEmpty,
+               NSApp.keyWindow !== NSColorPanel.shared,
+               !(NSApp.keyWindow?.firstResponder is NSText) {
+                selectedID = nil
+                return nil
+            }
+            // Escape works like Return: it lets go of a selected piece of artwork.
+            // With nothing selected it cancels, as before.
+            if event.keyCode == 53, selectedID != nil, !showingArtPicker,
+               mods.intersection([.command, .option, .control]).isEmpty,
+               NSApp.keyWindow !== NSColorPanel.shared {
+                if NSApp.keyWindow?.firstResponder is NSText { NSApp.keyWindow?.makeFirstResponder(nil) }
+                selectedID = nil
                 return nil
             }
             guard event.keyCode == 51 || event.keyCode == 117,
@@ -971,6 +1201,7 @@ struct FolderArtPicker: View {
                 )
 
             Button("Choose File...") { chooseImage() }
+                .help("Pick a PNG, JPEG or SVG picture from your Mac")
         }
     }
 }

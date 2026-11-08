@@ -138,9 +138,9 @@ enum FolderIconApplier {
     private static func cacheURL(for item: StudioIconItem) -> URL {
         let colour = (item.folderColorHex ?? "none").replacingOccurrences(of: "#", with: "")
         let artwork = (item.artwork ?? [])
-            .map { "\($0.kind.rawValue)|\($0.value)|\($0.x)|\($0.y)|\($0.size)" }
+            .map { "\($0.kind.rawValue)|\($0.value)|\($0.x)|\($0.y)|\($0.size)|\($0.angle)|\($0.colorHex ?? "")|\($0.fontStyle ?? "")|\($0.hasShadow)" }
             .joined(separator: ";")
-        let digest = SHA256.hash(data: Data(artwork.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+        let digest = SHA256.hash(data: Data(("clip1;" + artwork).utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
         return cacheFolder.appendingPathComponent("\(item.id.uuidString)-\(colour)-\(digest).png")
     }
 

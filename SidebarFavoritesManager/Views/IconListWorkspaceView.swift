@@ -63,7 +63,7 @@ struct IconListWorkspaceView: View {
             Alert(
                 title: Text("Remove \u{201C}\(item.displayName)\u{201D}?"),
                 message: Text(item.isCustomIconOn
-                    ? "The folder\u{2019}s custom icon is taken off too, so it goes back to the normal one."
+                    ? "The \(config.kind == .app ? "app" : "folder")\u{2019}s custom icon is taken off too, so it goes back to the normal one."
                     : "It is only removed from this list. The \(config.kind == .app ? "app" : "folder") itself is not touched."),
                 primaryButton: .destructive(Text("Remove")) { removeItem(item) },
                 secondaryButton: .cancel()
@@ -114,10 +114,14 @@ struct IconListWorkspaceView: View {
                             }
                         },
                         onDelete: { itemPendingRemoval = item },
-                        showsToggle: config.kind == .folder,
+                        showsToggle: true,
                         onToggle: { isOn in
                             Task {
-                                await FolderIconApplier.setEnabled(isOn, for: item, store: store)
+                                if config.kind == .folder {
+                                    await FolderIconApplier.setEnabled(isOn, for: item, store: store)
+                                } else {
+                                    await AppIconApplier.setEnabled(isOn, for: item, store: store)
+                                }
                             }
                         }
                     )
@@ -171,6 +175,8 @@ struct IconListWorkspaceView: View {
         Task {
             if item.kind == .folder, item.isCustomIconOn {
                 await FolderIconApplier.restoreOnRemoval(item)
+            } else if item.kind == .app, item.isCustomIconOn {
+                await AppIconApplier.restoreOnRemoval(item)
             }
             await MainActor.run {
                 store.remove(item)
@@ -270,12 +276,19 @@ struct IconListRow: View {
     /// The icon as macOS really draws it, tinted folders included.
     @State private var renderedIcon: NSImage?
 
+    /// Changes whenever an app's design changes, so its row draws the new design.
+    private var designKey: String {
+        guard item.kind == .app, let data = try? JSONEncoder().encode(item) else { return "" }
+        return String(data.hashValue)
+    }
+
     var body: some View {
         HStack(spacing: 12) {
             // Icon: the real one, as macOS currently draws it.
             iconView
                 .frame(width: 40, height: 40)
-                .task(id: "\(item.path)#\(item.folderColorHex ?? "")#\(refreshToken)") {
+                .scaleEffect(item.kind == .app ? 1.3 : 1)
+                .task(id: "\(item.path)#\(item.folderColorHex ?? "")#\(refreshToken)#\(designKey)") {
                     guard item.isLinked else {
                         renderedIcon = nil
                         return
@@ -286,6 +299,12 @@ struct IconListRow: View {
                         if let image = await FolderIconApplier.composite(
                             tintHex: item.folderColorHex, artworks: item.artwork ?? [], pixels: 256
                         ) {
+                            renderedIcon = image
+                        }
+                        return
+                    }
+                    if item.kind == .app, item.hasAppDesign {
+                        if let image = await AppIconRenderer.render(item, pixels: 256) {
                             renderedIcon = image
                         }
                         return
@@ -360,8 +379,12 @@ struct IconListRow: View {
                 ))
                 .toggleStyle(.switch)
                 .labelsHidden()
-                .disabled(!item.hasCustomIcon || !item.isLinked)
-                .help(item.hasCustomIcon
+                .disabled(!(item.kind == .app ? item.hasAppDesign : item.hasCustomIcon) || !item.isLinked)
+                .help(item.kind == .app
+                      ? (item.hasAppDesign
+                         ? "Custom icon on or off. Off shows the app\u{2019}s own icon; your design is kept."
+                         : "Design an icon first (the pencil), then switch it on here")
+                      : item.hasCustomIcon
                       ? "Custom icon on or off. Off shows Finder\u{2019}s own icon; your design is kept."
                       : "Design an icon first (the pencil), then switch it on here")
             }

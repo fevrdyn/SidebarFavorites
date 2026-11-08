@@ -6,6 +6,7 @@ struct FolderArtwork: Codable, Equatable, Identifiable {
         case symbol
         case emoji
         case image
+        case text
     }
 
     var id = UUID()
@@ -21,6 +22,14 @@ struct FolderArtwork: Codable, Equatable, Identifiable {
     var size: Double = 0.45
     /// A symbol's colour as "#RRGGBB". Nil means the default soft white.
     var colorHex: String?
+    /// Turned clockwise by this many degrees. Nil means not turned.
+    var rotation: Double?
+    var angle: Double { rotation ?? 0 }
+    /// For text: "sans", "serif" or "mono". Nil is the rounded default.
+    var fontStyle: String?
+    /// A drop shadow on or off. Nil is the usual: on for symbols and text, off for emoji and pictures.
+    var shadow: Bool?
+    var hasShadow: Bool { shadow ?? (kind == .symbol || kind == .text) }
 }
 
 /// Where the folder's front panel sits on the 1024 px picture of the folder.
@@ -32,6 +41,9 @@ enum FolderPanel {
     static let right: CGFloat = 982
     static let bottom: CGFloat = 890
     static let picture: CGFloat = 1024
+    /// How round the panel's corners are, on the 1024 px picture. Artwork is cut off
+    /// at the panel's edge, so this decides where it is cut. Approximate, like the rest.
+    static let cornerRadius: CGFloat = 64
 
     /// The panel inside a picture whose side is `side`. Origin at the top left.
     static func rect(in side: CGFloat) -> CGRect {
