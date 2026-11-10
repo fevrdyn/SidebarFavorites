@@ -26,126 +26,80 @@ struct SettingsView: View {
     // overwrites the other's result text.
     @State private var isRemovingAllSidebarIcons = false
     @State private var diagnosticsCopied = false
+    // studio-storage: state
+    @State private var storageSize: Int64 = 0
+    @State private var confirmRemoveAllFolders = false
+    @State private var confirmRemoveAllApps = false
+    @State private var isRemovingStudioIcons = false
+    @State private var studioRemovalMessage: String?
+    @ObservedObject private var studioStore = StudioIconStore.shared
 
     /// Live PlugInKit state per advanced favorite - the "permissions" panel.
     @State private var helperStatuses: [UUID: FinderSyncAppGenerator.HelperStatus] = [:]
 
     var body: some View {
-        Form {
-            Section {
-                Toggle("Launch at Login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { newValue in
-                        // Only react when the toggle differs from the last value we read
-                        // from the system - that's what distinguishes a user edit from a
-                        // programmatic sync, regardless of when onChange is delivered.
-                        guard newValue != systemLaunchAtLogin else { return }
-                        setLaunchAtLogin(newValue)
-                    }
-
-                if let caption = launchAtLoginCaption {
-                    Text(caption)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+        ScrollView {
+            // studio-settings: body
+            VStack(alignment: .leading, spacing: 18) { // studio-settings2: card spacing
+                generalBlock
+                aboutBlock
+                if !advancedFavorites.isEmpty {
+                    helpersBlock
                 }
-
-                Toggle("Show in Menu Bar", isOn: $showInMenuBar)
-                    .onChange(of: showInMenuBar) { _ in
-                        updateSettings()
-                    }
+                storageBlock
+                actionsBlock
             }
-
-            Section("About") {
-                aboutHeader
-
-                LabeledContent("Version") {
-                    Text(versionString)
-                }
-
-                LabeledContent("Helper App") {
-                    Button(action: openHelperAppLocation) {
-                        Text({
-                            #if DEBUG
-                            return ScreenshotMode.displayPath(configManager.helperAppURL.path)
-                            #else
-                            return configManager.helperAppURL.path
-                            #endif
-                        }())
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                    }
-                    .buttonStyle(.link)
-                }
-
-                if let diagnostic = configManager.loadDiagnostic {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Configuration Issue", systemImage: "exclamationmark.triangle.fill")
-                            .foregroundColor(.orange)
-                        Text(diagnostic)
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        if configManager.corruptBackupURL != nil {
-                            Button("Reveal Backup") {
-                                revealCorruptBackup()
-                            }
-                            .buttonStyle(.link)
-                        }
-                    }
-                }
-            }
-
-            if !advancedFavorites.isEmpty {
-                Section("Finder Sync Helpers") {
-                    ForEach(advancedFavorites) { favorite in
-                        helperRow(favorite)
-                    }
-
-                    Text("Each Both-icons favorite runs one helper (~6 MB). Helpers appear in System Settings as “SBF-…” with this app's icon.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    HStack {
-                        Button("Open Extensions Settings") {
-                            FinderSyncAppGenerator.openExtensionsSettings()
-                        }
-                        Spacer()
-                        Button("Refresh Status") {
-                            refreshHelperStatuses()
-                        }
-                        .buttonStyle(.borderless)
-                    }
-                }
-            }
-
-            Section("Actions") {
-                Button("Restart Finder") {
-                    FavoriteSyncCoordinator.shared.restartFinder()
-                }
-                .foregroundColor(.orange)
-
-                Button("Remove All Sidebar Icons") {
-                    showingRemoveAllSidebarIconsConfirmation = true
-                }
-                .foregroundColor(.red)
-                .disabled(isRemovingAllSidebarIcons)
-
-                Button(diagnosticsCopied ? "Diagnostics Copied" : "Copy Diagnostics") {
-                    copyDiagnostics()
-                }
-                .help("Copies a plain-text report of your favorites and Finder's sidebar rows, for a GitHub issue. It includes your folder paths.")
-            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 14)
         }
-        .formStyle(.grouped)
-        // Tall enough for every section without scrolling, including the
-        // Finder Sync helper list, which grows one row per advanced favorite.
-        .frame(width: 440, height: settingsHeight)
+        .scrollDisabled(true)
+        // Fixed size. Nothing scrolls, so settingsHeight must be tall enough for the content.
+        .frame(width: 440, height: settingsHeight) // studio-settings3: fixed size
         // Esc closes it, like every other sheet in the app.
         .background(DismissOnEscape())
         .onExitCommand { NSApp.keyWindow?.close() }
+        // studio-storage: dialogs
+        .confirmationDialog(
+            "Remove All Folder Icons?",
+            isPresented: $confirmRemoveAllFolders,
+            titleVisibility: .visible
+        ) {
+            Button("Remove All Folder Icons", role: .destructive) {
+                removeStudioIcons(.folder)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(studioRemovalConfirmationMessage(.folder))
+        }
+        .confirmationDialog(
+            "Remove All App Icons?",
+            isPresented: $confirmRemoveAllApps,
+            titleVisibility: .visible
+        ) {
+            Button("Remove All App Icons", role: .destructive) {
+                removeStudioIcons(.app)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(studioRemovalConfirmationMessage(.app))
+        }
+        .alert(
+            "Icons Removed",
+            isPresented: Binding(
+                get: { studioRemovalMessage != nil },
+                set: { if !$0 { studioRemovalMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { studioRemovalMessage = nil }
+        } message: {
+            Text(studioRemovalMessage ?? "")
+        }
         .onAppear {
             showInMenuBar = configManager.config.settings.showInMenuBar
             syncLaunchAtLoginFromSystem()
             refreshHelperStatuses()
+            refreshStorageSize() // studio-storage: onAppear
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             syncLaunchAtLoginFromSystem()
@@ -213,12 +167,247 @@ struct SettingsView: View {
         return lines.joined(separator: "\n")
     }
 
-    /// Grows with the helper list so nothing needs scrolling; capped so the
-    /// window still fits a laptop screen when many favorites are advanced.
+    // studio-settings: layout blocks
+
+    /// The window's fixed height; the content scrolls if it is taller.
     private var settingsHeight: CGFloat {
-        let base: CGFloat = 560
+        let base: CGFloat = 520
         guard !advancedFavorites.isEmpty else { return base }
-        return min(base + 90 + CGFloat(advancedFavorites.count) * 44, 900)
+        return min(base + 130 + CGFloat(advancedFavorites.count) * 40, 900)
+    }
+
+    /// Same look as the favorite editor's cards: 12 pt between blocks, 10 pt padding.
+    private func settingsBlock<Content: View>(
+        _ title: String? = nil,
+        trailing: String? = nil,
+        info: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                HStack {
+                    Text(title)
+                        .font(.headline)
+                    if let info {
+                        // studio-settings4: info icon
+                        Image(systemName: "questionmark.circle")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .help(info)
+                    }
+                    Spacer()
+                    if let trailing {
+                        // studio-settings2: trailing (lines up with the button's right edge)
+                        Text(trailing)
+                            .font(.headline)
+                            .padding(.trailing, 8)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            VStack(alignment: .leading, spacing: 8) { content() }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                )
+        }
+    }
+
+    private var generalBlock: some View {
+        settingsBlock {
+            HStack {
+                Text("Launch at Login")
+                Spacer()
+                Toggle("Launch at Login", isOn: $launchAtLogin)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small) // studio-settings3: switch 1
+                    .onChange(of: launchAtLogin) { newValue in
+                        // Only react when the toggle differs from the last value we read
+                        // from the system - that's what distinguishes a user edit from a
+                        // programmatic sync, regardless of when onChange is delivered.
+                        guard newValue != systemLaunchAtLogin else { return }
+                        setLaunchAtLogin(newValue)
+                    }
+            }
+
+            if let caption = launchAtLoginCaption {
+                Text(caption)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+
+            HStack {
+                Text("Show in Menu Bar")
+                Spacer()
+                Toggle("Show in Menu Bar", isOn: $showInMenuBar)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.small) // studio-settings3: switch 2
+                    .onChange(of: showInMenuBar) { _ in
+                        updateSettings()
+                    }
+            }
+        }
+    }
+
+    private var aboutBlock: some View {
+        settingsBlock("About") {
+            aboutHeader
+
+            Divider()
+
+            HStack {
+                Text("Version")
+                Spacer()
+                Text(versionString)
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+
+            HStack(spacing: 12) {
+                Text("Helper App")
+                    .fixedSize()
+                Spacer(minLength: 0)
+                Button(action: openHelperAppLocation) {
+                    Text({
+                        #if DEBUG
+                        return ScreenshotMode.displayPath(configManager.helperAppURL.path)
+                        #else
+                        return configManager.helperAppURL.path
+                        #endif
+                    }())
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                .buttonStyle(.link)
+            }
+
+            if let diagnostic = configManager.loadDiagnostic {
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("Configuration Issue", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                    Text(diagnostic)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if configManager.corruptBackupURL != nil {
+                        Button("Reveal Backup") {
+                            revealCorruptBackup()
+                        }
+                        .buttonStyle(.link)
+                    }
+                }
+            }
+        }
+    }
+
+    private var helpersBlock: some View {
+        settingsBlock("Finder Sync Helpers") {
+            ForEach(Array(advancedFavorites.enumerated()), id: \.element.id) { index, favorite in
+                if index > 0 {
+                    Divider()
+                }
+                helperRow(favorite)
+            }
+
+            Divider()
+
+            Text("Each Both-icons favorite runs one helper (~6 MB). Helpers appear in System Settings as \u{201C}SBF-\u{2026}\u{201D} with this app's icon.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack {
+                Button("Open Extensions Settings") {
+                    FinderSyncAppGenerator.openExtensionsSettings()
+                }
+                Spacer()
+                Button("Refresh Status") {
+                    refreshHelperStatuses()
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private var storageBlock: some View {
+        settingsBlock(
+            "Storage",
+            trailing: "Used: \(StudioStorage.formatted(storageSize))",
+            info: "Rendered icons, artwork, original and sidebar icon files. Unused removed automatically."
+        ) {
+            HStack(spacing: 10) {
+                Text(StudioStorage.displayPath)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: 0)
+
+                Button("Open Folder") {
+                    NSWorkspace.shared.open(StudioStorage.folder)
+                }
+                .help("Opens the Studio's data folder in Finder.")
+            }
+        }
+    }
+
+    private var actionsBlock: some View {
+        settingsBlock("Actions") {
+            HStack {
+                Button("Restart Finder") {
+                    FavoriteSyncCoordinator.shared.restartFinder()
+                }
+                .buttonStyle(.bordered)
+                .tint(.orange)
+
+                // studio-settings2: copy left
+                Button(diagnosticsCopied ? "Diagnostics Copied" : "Copy Diagnostics") {
+                    copyDiagnostics()
+                }
+                .help("Copies a plain-text report of your favorites and Finder's sidebar rows, for a GitHub issue. It includes your folder paths.")
+
+                Spacer() // studio-settings2: spacer
+            }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                Text("Remove all icons:")
+                    .foregroundColor(.secondary)
+
+                Button("Sidebar") {
+                    showingRemoveAllSidebarIconsConfirmation = true
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .disabled(isRemovingAllSidebarIcons)
+                .help("Removes every sidebar icon this app added to Finder's sidebar. Asks first.")
+
+                Button("Folder") {
+                    confirmRemoveAllFolders = true
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .disabled(isRemovingStudioIcons || studioIconsOn(.folder).isEmpty)
+                .help("Switches off every custom folder icon and puts the original folder icons back. Your designs stay in the list. Asks first.")
+
+                Button("Applications") {
+                    confirmRemoveAllApps = true
+                }
+                .buttonStyle(.bordered)
+                .tint(.red)
+                .disabled(isRemovingStudioIcons || studioIconsOn(.app).isEmpty)
+                .help("Switches off every custom icon on your applications and puts the original icons back. Your designs stay in the list. Asks first.")
+            }
+        }
     }
 
     // MARK: - Finder Sync helper status
@@ -394,6 +583,51 @@ struct SettingsView: View {
             configManager.corruptBackupURL?.path,
             inFileViewerRootedAtPath: configManager.appSupportURL.path
         )
+    }
+
+    // studio-storage: helpers
+    private func refreshStorageSize() {
+        Task {
+            let size = await Task.detached(priority: .utility) { StudioStorage.folderSize() }.value
+            storageSize = size
+        }
+    }
+
+    /// Folders or apps whose designed icon is on right now.
+    private func studioIconsOn(_ kind: StudioIconItem.Kind) -> [StudioIconItem] {
+        studioStore.items(of: kind).filter { $0.isCustomIconOn }
+    }
+
+    private func studioRemovalConfirmationMessage(_ kind: StudioIconItem.Kind) -> String {
+        let count = studioIconsOn(kind).count
+        let what = kind == .folder ? "folder" : "app"
+        let noun = count == 1 ? what : what + "s"
+        return "\(count) \(noun) in your list \(count == 1 ? "has" : "have") a custom icon switched on. "
+            + "This switches \(count == 1 ? "it" : "them") off and puts the original icon back. "
+            + "Your designs stay in the list, so you can switch them on again."
+    }
+
+    private func removeStudioIcons(_ kind: StudioIconItem.Kind) {
+        guard !isRemovingStudioIcons else { return }
+        let targets = studioIconsOn(kind)
+        guard !targets.isEmpty else { return }
+        isRemovingStudioIcons = true
+        Task {
+            for item in targets {
+                if kind == .folder {
+                    await FolderIconApplier.setEnabled(false, for: item, store: StudioIconStore.shared)
+                } else {
+                    await AppIconApplier.setEnabled(false, for: item, store: StudioIconStore.shared)
+                }
+            }
+            let remaining = studioIconsOn(kind).count
+            let noun = kind == .folder ? "folder" : "app"
+            studioRemovalMessage = remaining == 0
+                ? "Switched off the custom icon on \(targets.count) \(noun)\(targets.count == 1 ? "" : "s")."
+                : "\(remaining) of \(targets.count) could not be switched off. See apply.log in the Studio folder."
+            isRemovingStudioIcons = false
+            refreshStorageSize()
+        }
     }
 
     private func removeAllSidebarIcons() {

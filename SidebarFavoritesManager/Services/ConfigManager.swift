@@ -52,11 +52,18 @@ final class ConfigManager: ObservableObject {
         appSupportURL.appendingPathComponent("AdvancedApps")
     }
 
-    /// Directory for custom icon SVGs
+    /// Directory for custom icon SVGs. Lives with the Studio's own data
+    /// (ThemingStudio/SidebarIcons); see StudioStorage.
     var iconsDirectoryURL: URL {
-        let url = appSupportURL.appendingPathComponent("Icons")
+        let url = StudioStorage.sidebarIconsFolder
         try? fileManager.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    /// The original Sidebar Favorites app's icon folder. Only ever read from:
+    /// the original app may still use it. Not created here.
+    var legacyIconsDirectoryURL: URL {
+        appSupportURL.appendingPathComponent("Icons")
     }
 
     /// Path to config.json

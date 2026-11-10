@@ -14,6 +14,7 @@
 		07BA8A489C7EA8A5B7B03893 /* AppIcon.icns in Resources */ = {isa = PBXBuildFile; fileRef = 0BD2B23709F81767F72E8B18 /* AppIcon.icns */; };
 		0E76EBAE1511439EFC7E1644 /* FolderEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 663ACAF19B1E4F8C7487E348 /* FolderEditorView.swift */; };
 		0F8876DFC17A4748651D0F9E /* SFLBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 22FE2A878EB571297FCD1F44 /* SFLBridge.m */; };
+		15F0369FB8E6874388FEA8B4 /* StudioStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8492EFA9A8F5A23F667C5DF6 /* StudioStorage.swift */; };
 		1BA30C8D35178D0BFC2CD53D /* AppsWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0165AEE34E3661E6F3CC0C5D /* AppsWorkspaceView.swift */; };
 		25145B574968F42275F591B8 /* FavoriteRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE5DFC21AD083DA6299058D /* FavoriteRow.swift */; };
 		27C456621E6F027B3095F1A3 /* AppIconRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9129DC8EC4A68B1F750BD127 /* AppIconRenderer.swift */; };
@@ -97,6 +98,7 @@
 		7925F5A3A5F32BF1AD30B151 /* StudioShellView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioShellView.swift; sourceTree = "<group>"; };
 		7A28DBF1CDC2C2F927D7DF9E /* ScreenshotMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotMode.swift; sourceTree = "<group>"; };
 		7F93EADB4893728A39BC0F09 /* SidebarItemManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarItemManager.swift; sourceTree = "<group>"; };
+		8492EFA9A8F5A23F667C5DF6 /* StudioStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StudioStorage.swift; sourceTree = "<group>"; };
 		85F7BD2A6DD1A868DDEFA337 /* custom-icon-template.svg */ = {isa = PBXFileReference; path = "custom-icon-template.svg"; sourceTree = "<group>"; };
 		8A6AC9E2A9ADFA908C097740 /* IconListWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconListWorkspaceView.swift; sourceTree = "<group>"; };
 		8BE2C6190D205670F5798516 /* HelperIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = HelperIcon.icns; sourceTree = "<group>"; };
@@ -220,6 +222,7 @@
 				22FE2A878EB571297FCD1F44 /* SFLBridge.m */,
 				7F93EADB4893728A39BC0F09 /* SidebarItemManager.swift */,
 				4A7D796C88ED756A0AB06A09 /* SpacerStore.swift */,
+				8492EFA9A8F5A23F667C5DF6 /* StudioStorage.swift */,
 				B8E9F42D9171878ADD9CC1E1 /* SVGGeometryParser.swift */,
 				B2F407FE40E5EF3E23C47326 /* SymbolCatalog.swift */,
 				D80C91408215D5437D152321 /* SymbolCatalogBuilder.swift */,
@@ -428,6 +431,7 @@
 				93A6EF86776AE7D5275E866D /* SpacerStore.swift in Sources */,
 				F536560F799BE0C04006F518 /* StudioIconItem.swift in Sources */,
 				700C45512FC185127BD205CF /* StudioShellView.swift in Sources */,
+				15F0369FB8E6874388FEA8B4 /* StudioStorage.swift in Sources */,
 				D1CE144B2D1020278777A481 /* SymbolBrowserSheet.swift in Sources */,
 				05E0B44F360252FE90D8BF35 /* SymbolCatalog.swift in Sources */,
 				7F66D24001BE09AA1AF29DE0 /* SymbolCatalogBuilder.swift in Sources */,

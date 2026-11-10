@@ -12,6 +12,9 @@ struct SidebarFavoritesManagerApp: App {
     @State private var showingAddSheet = false
 
     init() {
+        // Copy the icons favorites use into ThemingStudio/SidebarIcons and drop unused ones.
+        // Must run before the menu bar icon store reads them.
+        StudioStorage.syncSidebarIcons()
         // Warm the menu bar icon store so custom icons are ready before the menu first opens.
         _ = MenuBarIconStore.shared
     }
